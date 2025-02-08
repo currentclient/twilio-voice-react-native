@@ -328,9 +328,6 @@ public class VoiceService extends Service {
       VOICE_CHANNEL_DEFAULT_IMPORTANCE);
     createOrReplaceNotification(callRecord.getNotificationId(), notification);
 
-    // stop active sound (if any)
-    VoiceApplicationProxy.getMediaPlayerManager().stop();
-
     // notify JS layer
     sendJSEvent(
       ScopeCallInvite,
