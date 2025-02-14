@@ -49,12 +49,17 @@ public class VoiceApplicationProxy {
   }
 
   public VoiceApplicationProxy(VoiceReactNativeHost reactNativeHost) {
+    new VoiceApplicationProxy(reactNativeHost.getAssociatedApplication());
+  }
+
+  public VoiceApplicationProxy(Application context) {
     if (null != instance) {
       logger.error("Voice application proxy already created!");
     }
     instance = this;
-    context = reactNativeHost.getAssociatedApplication();
+    this.context = context;
   }
+
   public void onCreate() {
     logger.debug("onCreate(..) invoked");
     // construct JS event engine
