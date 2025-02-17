@@ -16,6 +16,7 @@
     "twilio-voice-react-native.podspec",
     "plugin",
     "app.plugin.js",
+    "expo-module.config.json",
     "!lib/typescript/test/app",
     "!android/build",
     "!ios/build",
