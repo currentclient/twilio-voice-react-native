@@ -85,7 +85,7 @@ public class TwilioVoiceReactNativeModule extends ReactContextBaseJavaModule {
   );
 
   private final ReactApplicationContext reactContext;
-  private final AudioSwitchManager audioSwitchManager;
+  private final AudioSwitchManager audioSwitchManager = null;
 
   public TwilioVoiceReactNativeModule(ReactApplicationContext reactContext) {
     super(reactContext);
@@ -96,18 +96,18 @@ public class TwilioVoiceReactNativeModule extends ReactContextBaseJavaModule {
     System.setProperty(SDK_VERSION, ReactNativeVoiceSDKVer);
     Voice.setLogLevel(BuildConfig.DEBUG ? LogLevel.DEBUG : LogLevel.ERROR);
 
-    getJSEventEmitter().setContext(reactContext);
-
-    audioSwitchManager = VoiceApplicationProxy.getAudioSwitchManager()
-      .setListener((audioDevices, selectedDeviceUuid, selectedDevice) -> {
-        WritableMap audioDeviceInfo = serializeAudioDeviceInfo(
-          audioDevices,
-          selectedDeviceUuid,
-          selectedDevice
-        );
-        audioDeviceInfo.putString(VoiceEventType, VoiceEventAudioDevicesUpdated);
-        getJSEventEmitter().sendEvent(ScopeVoice, audioDeviceInfo);
-      });
+//    getJSEventEmitter().setContext(reactContext);
+//
+//    audioSwitchManager = VoiceApplicationProxy.getAudioSwitchManager()
+//      .setListener((audioDevices, selectedDeviceUuid, selectedDevice) -> {
+//        WritableMap audioDeviceInfo = serializeAudioDeviceInfo(
+//          audioDevices,
+//          selectedDeviceUuid,
+//          selectedDevice
+//        );
+//        audioDeviceInfo.putString(VoiceEventType, VoiceEventAudioDevicesUpdated);
+//        getJSEventEmitter().sendEvent(ScopeVoice, audioDeviceInfo);
+//      });
   }
 
   /**
