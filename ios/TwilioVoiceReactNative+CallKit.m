@@ -10,6 +10,7 @@
 
 #import "TwilioVoiceReactNative.h"
 #import "TwilioVoiceReactNativeConstants.h"
+#import "TwilioVoicePushRegistry.h"
 
 NSString * const kDefaultCallKitConfigurationName = @"Twilio Voice React Native";
 
@@ -61,7 +62,13 @@ NSString * const kDefaultCallKitConfigurationName = @"Twilio Voice React Native"
         callKitConfiguration.ringtoneSound = configuration[kTwilioVoiceReactNativeCallKitRingtoneSound];
     }
     
-    self.callKitProvider = [[CXProvider alloc] initWithConfiguration:callKitConfiguration];
+    // Use the shared CXProvider from TwilioVoicePushRegistry.
+    // This provider was created very early (in +initialize) so that
+    // incoming VoIP pushes can report to CallKit immediately, even
+    // before the RN module is initialized.  We update its configuration
+    // and set ourselves as delegate so we receive all CallKit actions.
+    [TwilioVoicePushRegistry setSharedCallKitProviderConfiguration:callKitConfiguration];
+    self.callKitProvider = [TwilioVoicePushRegistry sharedCallKitProvider];
     [self.callKitProvider setDelegate:self queue:nil];
     self.callKitCallController = [CXCallController new];
 }
