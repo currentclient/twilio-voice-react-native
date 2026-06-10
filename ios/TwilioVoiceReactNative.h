@@ -16,6 +16,7 @@
 @class TVOCallInvite;
 @class TVOCancelledCallInvite;
 @class TVODefaultAudioDevice;
+@class TVOPreflightTest;
 
 FOUNDATION_EXPORT NSString * const kTwilioVoiceReactNativeEventKeyCall;
 FOUNDATION_EXPORT NSString * const kTwilioVoiceReactNativeEventKeyCallInvite;
@@ -36,6 +37,10 @@ FOUNDATION_EXPORT NSString * const kTwilioVoiceReactNativeEventKeyCancelledCallI
 @property (nonatomic, strong) void(^callKitCompletionCallback)(BOOL);
 @property (nonatomic, strong) RCTPromiseResolveBlock callPromiseResolver;
 
+@property (nonatomic, strong) TVOPreflightTest *preflightTest;
+@property (nonatomic, copy) NSString *preflightTestUuid;
+@property (nonatomic, strong) NSMutableArray *preflightTestEvents;
+
 // Indicates if the disconnect is triggered from app UI, instead of the system Call UI
 @property (nonatomic, assign) BOOL userInitiatedDisconnect;
 
@@ -43,7 +48,8 @@ FOUNDATION_EXPORT NSString * const kTwilioVoiceReactNativeEventKeyCancelledCallI
 
 + (TVODefaultAudioDevice *)twilioAudioDevice;
 
-@property(nonatomic, strong) NSString *incomingCallContactHandleTemplate;
+- (NSString *)warningNameWithNumber:(NSNumber *)warning;
+- (NSMutableArray *)callQualityWarningsArrayFromSet:(NSSet<NSNumber *> *)qualityWarnings;
 
 @end
 

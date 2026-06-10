@@ -1,3 +1,53 @@
+1.7.0 (October 8, 2025)
+=======================
+
+## Features
+
+### PreflightTest
+
+- You can now perform a `PreflightTest` to help evaluate the quality of calls made on a device ahead of time. Please see this documentation for more details: [Mobile SDK PreflightTest](https://www.twilio.com/docs/voice/sdks/mobile-preflight-test).
+
+## Changes
+
+### Platform Specific Changes
+
+#### iOS
+
+- Updated the Twilio Voice iOS SDK version to `6.13.3`. This update fixes a Bluetooth device type deprecation warning when building with Xcode 26.
+
+## Fixes
+
+- The call contact handle template feature now caches the set value. This fixes an issue where the handle template value would be `null` when an incoming call was received and the React Native JS runtime was not initialized or was restarted by the OS.
+
+1.6.1 (July 7, 2025)
+====================
+
+## Changes
+
+### Platform Specific Changes
+
+#### Android
+
+- Added Bluetooth permissions to the Twilio Voice RN SDK manifest.
+
+## Fixes
+
+### Platform Specific Fixes
+
+#### Android
+
+- Updated Audioswitch library to version `1.2.2`. This should fix missing Bluetooth audio devices on Android platforms.
+
+1.6.0 (June 18, 2025)
+=====================
+
+## Features
+
+- Added support for React Native applications using the New Architecture. If you are migrating your app from the Old Architecture to the New Architecture, and are already using the Twilio Voice React Native SDK, you will need to adjust your `MainApplication.java` file. Please see the updated Getting Started docs for [Java](/docs/getting-started-android-java.md) or [Kotlin](/docs/getting-started-android-kotlin.md).
+
+  - If you are encountering this error:
+  `java.lang.IllegalArgumentException: You can call getDefaultReactHost only with instances of DefaultReactNativeHost` when attempting to use this SDK with a NewArch application, please update your application logic in accordance with our updated Android Getting Started guides as linked above.
+
 1.5.0 (April 2, 2025)
 ===================
 

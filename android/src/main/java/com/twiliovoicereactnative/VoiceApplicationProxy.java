@@ -20,6 +20,7 @@ public class VoiceApplicationProxy {
   private static VoiceApplicationProxy instance = null;
   private Application context = null;
   private final CallRecordDatabase callRecordDatabase = new CallRecordDatabase();
+  private final PreflightTestRecordDatabase preflightTestRecordDatabase = new PreflightTestRecordDatabase();
   private AudioSwitchManager audioSwitchManager;
   private MediaPlayerManager mediaPlayerManager;
   private JSEventEmitter jsEventEmitter;
@@ -48,6 +49,13 @@ public class VoiceApplicationProxy {
     }
   }
 
+  public VoiceApplicationProxy(Application application) {
+    if (null != instance) {
+      logger.error("Voice application proxy already created!");
+    }
+    instance = this;
+    context = application;
+  }
   public VoiceApplicationProxy(VoiceReactNativeHost reactNativeHost) {
     if (null != instance) {
       logger.error("Voice application proxy already created!");
@@ -89,6 +97,9 @@ public class VoiceApplicationProxy {
   }
   static CallRecordDatabase getCallRecordDatabase() {
     return VoiceApplicationProxy.instance.callRecordDatabase;
+  }
+  static PreflightTestRecordDatabase getPreflightTestRecordDatabase() {
+    return VoiceApplicationProxy.instance.preflightTestRecordDatabase;
   }
   static AudioSwitchManager getAudioSwitchManager() {
     return VoiceApplicationProxy.instance.audioSwitchManager;

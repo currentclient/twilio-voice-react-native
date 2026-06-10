@@ -1,4 +1,33 @@
 # Twilio Voice React Native SDK
+
+> **CurrentClient fork** (`currentclient/twilio-voice-react-native`)
+>
+> This is CurrentClient's first-party fork of the Twilio Voice React Native
+> SDK, tracking upstream `1.7.0`. It replaces the
+> `patches/@twilio+voice-react-native-sdk+1.7.0.patch` previously maintained
+> in `cc-mob-app` via patch-package. See PRO-3980.
+>
+> **What differs from upstream**
+> - Android: ringer-mode aware `MediaPlayerManager` rewrite, `VoiceService`
+>   null-safety hardening, lock-screen window-flag fixes (`fix(android)` commit)
+> - iOS: early CallKit reporting via a shared `CXProvider`, native VoIP push
+>   handling with deferred PushKit completion, cold-start call-invite race fix
+>   (`fix(ios)` commit)
+> - Ships an **Expo config plugin** (`app.plugin.js` / `plugin/`): background
+>   modes, user-activity types, header search path, Android permissions and
+>   service declarations. See `plugin/index.js` for supported props.
+>
+> **Consuming** (in `package.json`):
+> ```json
+> "@twilio/voice-react-native-sdk": "github:currentclient/twilio-voice-react-native#<branch-or-tag>"
+> ```
+> The committed `lib/` build output is used as-is (the upstream `prepare`
+> script was renamed to `build:lib` so git installs do not rebuild). If you
+> change TypeScript sources, run `yarn build:lib` and commit the result.
+>
+> **Tracking upstream**: add `https://github.com/twilio/twilio-voice-react-native`
+> as the `upstream` remote and cherry-pick or merge release tags selectively.
+
 [![NPM](https://img.shields.io/npm/v/%40twilio/voice-react-native-sdk.svg?color=blue)](https://www.npmjs.com/package/%40twilio/voice-react-native-sdk) [![CircleCI](https://dl.circleci.com/status-badge/img/gh/twilio/twilio-voice-react-native/tree/main.svg?style=shield)](https://dl.circleci.com/status-badge/redirect/gh/twilio/twilio-voice-react-native/tree/main)
 
 Twilio's Voice React Native SDK allows you to add real-time voice and PSTN calling to your React Native apps.

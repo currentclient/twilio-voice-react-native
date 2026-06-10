@@ -23,6 +23,20 @@ public class VoiceActivityProxy {
   private final Activity context;
   private final PermissionsRationaleNotifier notifier;
 
+  /**
+   * Window flags used to show the activity over the lock screen and turn the
+   * screen on for incoming calls. These are set when a call-related intent is
+   * received and cleared when the call ends so the device can sleep normally.
+   *
+   * Note: FLAG_KEEP_SCREEN_ON is intentionally omitted. The original Twilio SDK
+   * set it here, but it prevents the device from ever sleeping while the activity
+   * is visible — even after a call ends. Screen-on during active calls is handled
+   * by ProximityManager's PROXIMITY_SCREEN_OFF_WAKE_LOCK instead.
+   */
+  private static final int CALL_WINDOW_FLAGS =
+    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
+      | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON;
+
   public interface PermissionsRationaleNotifier {
     void displayRationale(final String permission);
   }
@@ -38,11 +52,6 @@ public class VoiceActivityProxy {
     if (!checkPermissions()) {
       requestPermissions();
     }
-    // These flags ensure that the activity can be launched when the screen is locked.
-    Window window = context.getWindow();
-    window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
-      | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
-      | WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     // handle any incoming intents
     handleIntent(context.getIntent());
   }
@@ -77,12 +86,30 @@ public class VoiceActivityProxy {
   }
   private void handleIntent(Intent intent) {
     String action = intent.getAction();
-    if ((null != action) && (!action.equals(Constants.ACTION_PUSH_APP_TO_FOREGROUND))) {
-      Intent copiedIntent = new Intent(intent);
-      copiedIntent.setClass(context.getApplicationContext(), VoiceService.class);
-      copiedIntent.setFlags(0);
-      context.getApplicationContext().startService(copiedIntent);
+    if (null == action) {
+      return;
     }
+
+    if (action.equals(Constants.ACTION_PUSH_APP_TO_FOREGROUND)) {
+      // Non-call intent — no flags needed, no forwarding to VoiceService.
+      return;
+    }
+
+    // Call-related intent (accept, foreground-and-deprioritize, etc.) —
+    // set window flags so the activity shows over the lock screen and
+    // turns the screen on, then forward to VoiceService.
+    Window window = context.getWindow();
+    window.addFlags(CALL_WINDOW_FLAGS);
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+      context.setShowWhenLocked(true);
+      context.setTurnScreenOn(true);
+    }
+    logger.debug("handleIntent(): added call window flags for action=" + action);
+
+    Intent copiedIntent = new Intent(intent);
+    copiedIntent.setClass(context.getApplicationContext(), VoiceService.class);
+    copiedIntent.setFlags(0);
+    context.getApplicationContext().startService(copiedIntent);
   }
 
   static {

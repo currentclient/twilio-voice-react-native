@@ -114,6 +114,17 @@ static TVODefaultAudioDevice *sTwilioAudioDevice;
                                                  name:kTwilioVoicePushRegistryNotification
                                                object:nil];
 
+    // Drain any invite that arrived before this module registered as an observer.
+    // TwilioVoiceReactNative initializes on a background thread (requiresMainQueueSetup=NO)
+    // while VoIP pushes are delivered on the main thread — if the push fires first the
+    // NSNotification above is missed.  The JS bootstrap discovers it via getCallInvites()
+    // so no event emission is needed; storing in callInviteMap is sufficient.
+    TVOCallInvite *missedInvite = [TwilioVoicePushRegistry claimPendingCallInvite];
+    if (missedInvite && !self.callInviteMap[missedInvite.uuid.UUIDString]) {
+        NSLog(@"[TwilioVoiceReactNative] Claiming invite missed due to cold-start race (uuid: %@)", missedInvite.uuid.UUIDString);
+        self.callInviteMap[missedInvite.uuid.UUIDString] = missedInvite;
+    }
+
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(handleRouteChange:)
                                                  name:AVAudioSessionRouteChangeNotification
@@ -133,8 +144,67 @@ static TVODefaultAudioDevice *sTwilioAudioDevice;
         // Skip the event emitting since 1, the listener has not registered and 2, the app does not need to know about this
         return;
     } else if ([type isEqualToString:kTwilioVoicePushRegistryNotificationIncomingPushReceived]) {
-        NSDictionary *payload = eventBody[kTwilioVoicePushRegistryNotificationIncomingPushPayload];
-        [TwilioVoiceSDK handleNotification:payload delegate:self delegateQueue:nil callMessageDelegate:self];
+        // The push registry has already called TwilioVoiceSDK.handleNotification
+        // and reported to CallKit.  If a TVOCallInvite was passed directly, use
+        // it instead of calling handleNotification a second time.
+        TVOCallInvite *callInvite = eventBody[kTwilioVoicePushRegistryNotificationCallInvite];
+        if (callInvite) {
+            NSLog(@"[TwilioVoiceReactNative] Received pre-handled call invite from push registry (uuid: %@)", callInvite.uuid.UUIDString);
+            self.callInviteMap[callInvite.uuid.UUIDString] = callInvite;
+
+            // Notification was received — clear the static slot so subscribeToNotifications
+            // does not process it a second time (prevents double-registration edge case).
+            [TwilioVoicePushRegistry claimPendingCallInvite];
+
+            // CallKit was already notified by the push registry — do NOT call
+            // reportNewIncomingCall again.  Just emit the JS event.
+            [self sendEventWithName:kTwilioVoiceReactNativeScopeVoice
+                               body:@{
+                                 kTwilioVoiceReactNativeVoiceEventType: kTwilioVoiceReactNativeVoiceEventTypeValueIncomingCallInvite,
+                                 kTwilioVoiceReactNativeEventKeyCallInvite: [self callInviteInfo:callInvite]}];
+        } else {
+            // Legacy / fallback path: payload provided without a pre-built invite.
+            NSDictionary *payload = eventBody[kTwilioVoicePushRegistryNotificationIncomingPushPayload];
+            if (payload) {
+                [TwilioVoiceSDK handleNotification:payload delegate:self delegateQueue:nil callMessageDelegate:self];
+            }
+        }
+    } else if ([type isEqualToString:kTwilioVoicePushRegistryNotificationCancelledCallInviteReceived]) {
+        TVOCancelledCallInvite *cancelledCallInvite = eventBody[kTwilioVoicePushRegistryNotificationCancelledCallInvite];
+        NSError *error = eventBody[kTwilioVoicePushRegistryNotificationCancelledCallInviteError];
+        if ([error isKindOfClass:[NSNull class]]) {
+            error = nil;
+        }
+        if (cancelledCallInvite) {
+            NSLog(@"[TwilioVoiceReactNative] Received pre-handled cancelled call invite from push registry (callSid: %@)", cancelledCallInvite.callSid);
+
+            NSString *uuid;
+            for (NSString *uuidKey in [self.callInviteMap allKeys]) {
+                TVOCallInvite *invite = self.callInviteMap[uuidKey];
+                if ([invite.callSid isEqualToString:cancelledCallInvite.callSid]) {
+                    uuid = uuidKey;
+                    break;
+                }
+            }
+
+            if (uuid) {
+                self.cancelledCallInviteMap[uuid] = cancelledCallInvite;
+
+                [self sendEventWithName:kTwilioVoiceReactNativeScopeCallInvite
+                                   body:@{
+                                     kTwilioVoiceReactNativeVoiceEventType: kTwilioVoiceReactNativeCallInviteEventTypeValueCancelled,
+                                     kTwilioVoiceReactNativeCallInviteEventKeyCallSid: cancelledCallInvite.callSid,
+                                     kTwilioVoiceReactNativeEventKeyCancelledCallInvite: [self cancelledCallInviteInfo:cancelledCallInvite],
+                                     kTwilioVoiceReactNativeVoiceErrorKeyError: @{
+                                       kTwilioVoiceReactNativeVoiceErrorKeyCode: @(error ? error.code : 0),
+                                       kTwilioVoiceReactNativeVoiceErrorKeyMessage: error ? [error localizedDescription] : @""}}];
+
+                [self.callInviteMap removeObjectForKey:uuid];
+                [self endCallWithUuid:[[NSUUID alloc] initWithUUIDString:uuid]];
+            } else {
+                NSLog(@"[TwilioVoiceReactNative] No matching call invite found for cancelled invite (callSid: %@)", cancelledCallInvite.callSid);
+            }
+        }
     }
 }
 
@@ -405,7 +475,7 @@ RCT_EXPORT_MODULE();
 
 - (NSArray<NSString *> *)supportedEvents
 {
-    return @[kTwilioVoiceReactNativeScopeVoice, kTwilioVoiceReactNativeScopeCall, kTwilioVoiceReactNativeScopeCallInvite, kTwilioVoiceReactNativeScopeCallMessage];
+    return @[kTwilioVoiceReactNativeScopeVoice, kTwilioVoiceReactNativeScopeCall, kTwilioVoiceReactNativeScopeCallInvite, kTwilioVoiceReactNativeScopeCallMessage, kTwilioVoiceReactNativeScopePreflightTest];
 }
 
 + (BOOL)requiresMainQueueSetup
@@ -983,7 +1053,10 @@ RCT_EXPORT_METHOD(voice_setIncomingCallContactHandleTemplate:(NSString *)templat
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 {
-    self.incomingCallContactHandleTemplate = template;
+    NSUserDefaults *preferences = [NSUserDefaults standardUserDefaults];
+    NSString *preferenceKey = @"incomingCallContactHandleTemplate";
+    [preferences setObject:template forKey:preferenceKey];
+    [preferences synchronize];
     resolve(NULL);
 }
 
@@ -1038,6 +1111,38 @@ RCT_EXPORT_METHOD(voice_setIncomingCallContactHandleTemplate:(NSString *)templat
         return TVOCallFeedbackIssueEcho;
     }
     return TVOCallFeedbackIssueNotReported;
+}
+
+- (NSString *)warningNameWithNumber:(NSNumber *)warning {
+    if ([warning intValue] < 0 || [warning intValue] > 4) {
+        NSLog(@"Warning number out of TVOCallQualityWarning range");
+        return @"undefined";
+    }
+    
+    TVOCallQualityWarning warningValue = [warning intValue];
+    switch (warningValue) {
+        case TVOCallQualityWarningHighRtt:
+            return @"high-rtt";
+        case TVOCallQualityWarningHighJitter:
+            return @"high-jitter";
+        case TVOCallQualityWarningHighPacketsLostFraction:
+            return @"high-packets-lost-fraction";
+        case TVOCallQualityWarningLowMos:
+            return @"low-mos";
+        case TVOCallQualityWarningConstantAudioInputLevel:
+            return @"constant-audio-input-level";
+        default:
+            return @"undefined";
+    }
+}
+
+- (NSMutableArray *)callQualityWarningsArrayFromSet:(NSSet<NSNumber *> *)qualityWarnings {
+  NSMutableArray<NSString *> *warningEvents = [NSMutableArray array];
+  for (NSNumber *warning in qualityWarnings) {
+      NSString *event = [self warningNameWithNumber:warning];
+      [warningEvents addObject:event];
+  }
+  return warningEvents;
 }
 
 @end

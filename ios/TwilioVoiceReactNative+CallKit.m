@@ -10,6 +10,7 @@
 
 #import "TwilioVoiceReactNative.h"
 #import "TwilioVoiceReactNativeConstants.h"
+#import "TwilioVoicePushRegistry.h"
 
 NSString * const kDefaultCallKitConfigurationName = @"Twilio Voice React Native";
 
@@ -61,7 +62,13 @@ NSString * const kDefaultCallKitConfigurationName = @"Twilio Voice React Native"
         callKitConfiguration.ringtoneSound = configuration[kTwilioVoiceReactNativeCallKitRingtoneSound];
     }
     
-    self.callKitProvider = [[CXProvider alloc] initWithConfiguration:callKitConfiguration];
+    // Use the shared CXProvider from TwilioVoicePushRegistry.
+    // This provider was created very early (in +initialize) so that
+    // incoming VoIP pushes can report to CallKit immediately, even
+    // before the RN module is initialized.  We update its configuration
+    // and set ourselves as delegate so we receive all CallKit actions.
+    [TwilioVoicePushRegistry setSharedCallKitProviderConfiguration:callKitConfiguration];
+    self.callKitProvider = [TwilioVoicePushRegistry sharedCallKitProvider];
     [self.callKitProvider setDelegate:self queue:nil];
     self.callKitCallController = [CXCallController new];
 }
@@ -82,8 +89,14 @@ NSString * const kDefaultCallKitConfigurationName = @"Twilio Voice React Native"
     if (handleName == nil) {
         handleName = @"Unknown Caller";
     }
-    if (self.incomingCallContactHandleTemplate != NULL && [self.incomingCallContactHandleTemplate length] > 0) {
-        handleName = [self getDisplayName:self.incomingCallContactHandleTemplate customParameters:[callInvite customParameters]];
+
+    NSUserDefaults *preferences = [NSUserDefaults standardUserDefaults];
+    NSString *preferenceKey = @"incomingCallContactHandleTemplate";
+    if ([preferences objectForKey:preferenceKey] != nil) {
+        const NSString *preferenceVal = [preferences stringForKey:preferenceKey];
+        if ([preferenceVal length] > 0) {
+            handleName = [self getDisplayName:preferenceVal customParameters:[callInvite customParameters]];
+        }
     }
 
     CXHandle *callHandle = [[CXHandle alloc] initWithType:CXHandleTypeGeneric value:handleName];
@@ -491,29 +504,6 @@ previousWarnings:(NSSet<NSNumber *> *)previousWarnings {
 }
 
 #pragma mark - Warning event conversion
-
-- (NSString *)warningNameWithNumber:(NSNumber *)warning {
-    if ([warning intValue] < 0 || [warning intValue] > 4) {
-        NSLog(@"Warning number out of TVOCallQualityWarning range");
-        return @"undefined";
-    }
-    
-    TVOCallQualityWarning warningValue = [warning intValue];
-    switch (warningValue) {
-        case TVOCallQualityWarningHighRtt:
-            return @"high-rtt";
-        case TVOCallQualityWarningHighJitter:
-            return @"high-jitter";
-        case TVOCallQualityWarningHighPacketsLostFraction:
-            return @"high-packets-lost-fraction";
-        case TVOCallQualityWarningLowMos:
-            return @"low-mos";
-        case TVOCallQualityWarningConstantAudioInputLevel:
-            return @"constant-audio-input-level";
-        default:
-            return @"undefined";
-    }
-}
 
 - (NSString *)getSimplifiedISO8601FormattedTimestamp:(NSDate *)date {
     NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
