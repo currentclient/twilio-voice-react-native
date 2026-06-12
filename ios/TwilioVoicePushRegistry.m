@@ -33,6 +33,44 @@ static TVOCallInvite *sPendingCallInvite;
 // fires asynchronously — calling completion() before it would trigger
 // _terminateAppIfThereAreUnhandledVoIPPushes (PRO-4038).
 static dispatch_block_t sPendingVoIPCompletion;
+// Monotonically-increasing counter; incremented whenever sPendingVoIPCompletion is cleared
+// so that in-flight watchdog blocks can detect they are stale and do nothing.
+static NSUInteger sVoIPPushGeneration = 0;
+
+// Satisfies a pending PushKit completion by reporting a placeholder incoming call to CallKit
+// (required by iOS 13+ — every VoIP push must produce reportNewIncomingCall before completion()).
+// The placeholder is immediately ended so it never appears as an active call.
+// Safe to call on the main queue only (PKPushRegistry uses main queue).
+static void TVPRSatisfyPendingPushWithPlaceholder(NSString *handleValue, NSString *reasonLog) {
+    dispatch_block_t pendingCompletion = sPendingVoIPCompletion;
+    sPendingVoIPCompletion = nil;
+    if (!pendingCompletion) return;
+    sVoIPPushGeneration++;
+
+    NSString *handle = handleValue.length > 0 ? handleValue : @"Unknown Caller";
+    CXCallUpdate *callUpdate = [[CXCallUpdate alloc] init];
+    callUpdate.remoteHandle = [[CXHandle alloc] initWithType:CXHandleTypeGeneric value:handle];
+    callUpdate.localizedCallerName = handle;
+    callUpdate.supportsDTMF = NO;
+    callUpdate.supportsHolding = NO;
+    callUpdate.supportsGrouping = NO;
+    callUpdate.supportsUngrouping = NO;
+    callUpdate.hasVideo = NO;
+
+    NSUUID *placeholderUuid = [NSUUID UUID];
+    NSLog(@"[TwilioVoicePushRegistry] Satisfying VoIP push with placeholder call (%@)", reasonLog);
+    [sSharedCallKitProvider reportNewIncomingCallWithUUID:placeholderUuid
+                                                   update:callUpdate
+                                               completion:^(NSError *error) {
+        if (!error) {
+            [sSharedCallKitProvider reportCallWithUUID:placeholderUuid
+                                           endedAtDate:[NSDate date]
+                                                reason:CXCallEndedReasonRemoteEnded];
+        }
+        // A failed report (DND/blocklist) still satisfies PushKit.
+    }];
+    pendingCompletion();
+}
 
 @interface TwilioVoicePushRegistry () <PKPushRegistryDelegate, TVONotificationDelegate>
 
@@ -49,6 +87,7 @@ static dispatch_block_t sPendingVoIPCompletion;
         config.maximumCallGroups = 1;
         config.maximumCallsPerCallGroup = 1;
         config.supportedHandleTypes = [NSSet setWithArray:@[@(CXHandleTypeGeneric), @(CXHandleTypePhoneNumber)]];
+        config.includesCallsInRecents = NO;
         sSharedCallKitProvider = [[CXProvider alloc] initWithConfiguration:config];
         NSLog(@"[TwilioVoicePushRegistry] Shared CallKit provider initialized");
     }
@@ -99,7 +138,15 @@ withCompletionHandler:(void (^)(void))completion {
         // Twilio's handleNotification: makes a network round-trip, so
         // callInviteReceived: fires asynchronously.  Store the block here and
         // call it from callInviteReceived: after reportNewIncomingCall (PRO-4038).
+
+        // Overwrite protection: if a previous push completion was never satisfied,
+        // satisfy it now before storing the new one (PRO-4264).
+        if (sPendingVoIPCompletion) {
+            TVPRSatisfyPendingPushWithPlaceholder(nil, @"previous push still pending");
+        }
+
         sPendingVoIPCompletion = completion;
+        NSUInteger capturedGeneration = ++sVoIPPushGeneration;
 
         // Ensure the Twilio audio device is configured.
         // The RN module normally does this, but it may not be initialized yet
@@ -116,6 +163,16 @@ withCompletionHandler:(void (^)(void))completion {
                                   delegate:self
                              delegateQueue:nil
                        callMessageDelegate:nil];
+
+        // Watchdog: if no delegate callback fires within 3 s (network failure,
+        // invalid payload, or any other silent failure), satisfy PushKit ourselves
+        // to avoid _terminateAppIfThereAreUnhandledVoIPPushes (PRO-4264).
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            if (sPendingVoIPCompletion && sVoIPPushGeneration == capturedGeneration) {
+                TVPRSatisfyPendingPushWithPlaceholder(nil, @"watchdog — no delegate callback within 3s");
+            }
+        });
         return;
     }
 
@@ -179,6 +236,7 @@ withCompletionHandler:(void (^)(void))completion {
     // PushKit completion block (PRO-4038).
     dispatch_block_t pendingCompletion = sPendingVoIPCompletion;
     sPendingVoIPCompletion = nil;
+    sVoIPPushGeneration++;  // invalidate any in-flight watchdog for this push (PRO-4264)
     if (pendingCompletion) {
         pendingCompletion();
     }
@@ -200,6 +258,15 @@ withCompletionHandler:(void (^)(void))completion {
 
 - (void)cancelledCallInviteReceived:(TVOCancelledCallInvite *)cancelledCallInvite error:(NSError *)error {
     NSLog(@"[TwilioVoicePushRegistry] cancelledCallInviteReceived (callSid: %@)", cancelledCallInvite.callSid);
+
+    // The cancellation arrived via a VoIP push, so sPendingVoIPCompletion may still be set.
+    // iOS requires reportNewIncomingCall before the completion block runs — satisfy it with
+    // a placeholder that is immediately ended (PRO-4264).
+    // Guard on sPendingVoIPCompletion to distinguish cancel-via-push (placeholder needed) from
+    // cancel-via-signaling (no push pending — posting a placeholder would flash bogus call UI).
+    if (sPendingVoIPCompletion) {
+        TVPRSatisfyPendingPushWithPlaceholder(cancelledCallInvite.from, @"cancel push");
+    }
 
     // Notify the RN module so it can match the cancelled invite, clean up, and
     // emit the JS event.
