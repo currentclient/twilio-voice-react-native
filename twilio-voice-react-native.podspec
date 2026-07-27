@@ -15,6 +15,11 @@ Pod::Spec.new do |s|
 
   s.source_files = "ios/**/*.{h,m,mm}"
 
+  # Ringback tone for outgoing calls. Must stay in sync with the lookup in
+  # TwilioVoiceReactNative+CallKit.m -playRingback, which resolves this bundle
+  # via +[NSBundle bundleForClass:].
+  s.resource_bundles = { "TwilioVoiceReactNativeAssets" => ["ios/Resources/**/*"] }
+
   s.dependency "React-Core"
   s.dependency "TwilioVoice", "6.13.3"
   s.xcconfig  =  { 'VALID_ARCHS' => 'arm64 x86_64' }
