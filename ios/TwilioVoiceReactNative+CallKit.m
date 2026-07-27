@@ -474,7 +474,7 @@ previousWarnings:(NSSet<NSNumber *> *)previousWarnings {
 // copied into the app; under use_frameworks! it sits inside the framework --
 // bundleForClass: plus the nested-bundle lookup covers both, and falls back to
 // the containing bundle if CocoaPods flattened it.
-- (NSBundle *)resourceBundle {
+- (NSBundle *)tvrn_resourceBundle {
     NSBundle *containingBundle = [NSBundle bundleForClass:[self class]];
     NSURL *bundleURL = [containingBundle URLForResource:kTwilioVoiceReactNativeResourceBundleName
                                           withExtension:@"bundle"];
@@ -482,7 +482,7 @@ previousWarnings:(NSSet<NSNumber *> *)previousWarnings {
 }
 
 - (void)playRingback {
-    NSString *ringtonePath = [[self resourceBundle] pathForResource:@"ringtone" ofType:@"wav"];
+    NSString *ringtonePath = [[self tvrn_resourceBundle] pathForResource:@"ringtone" ofType:@"wav"];
     if (ringtonePath.length == 0) {
         // RCTLogError, not NSLog: an unplayable ringback must not kill the call,
         // but it must not hide in the console for another five years either.
@@ -529,7 +529,9 @@ previousWarnings:(NSSet<NSNumber *> *)previousWarnings {
 }
 
 - (void)audioPlayerDecodeErrorDidOccur:(AVAudioPlayer *)player error:(NSError *)error {
-    NSLog(@"Decode error occurred: %@", error);
+    // The last silent path: a wav that resolves and initializes but cannot be
+    // decoded fails exactly like PRO-5724 did, with no signal at all.
+    RCTLogError(@"[TwilioVoiceReactNative] Ringback decode error -- the tone will be silent: %@", error);
 }
 
 #pragma mark - Warning event conversion
