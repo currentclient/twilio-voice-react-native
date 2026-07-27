@@ -8,11 +8,16 @@
 @import CallKit;
 @import TwilioVoice;
 
+#import <React/RCTLog.h>
+
 #import "TwilioVoiceReactNative.h"
 #import "TwilioVoiceReactNativeConstants.h"
 #import "TwilioVoicePushRegistry.h"
 
 NSString * const kDefaultCallKitConfigurationName = @"Twilio Voice React Native";
+
+// Must match the s.resource_bundles key in twilio-voice-react-native.podspec.
+NSString * const kTwilioVoiceReactNativeResourceBundleName = @"TwilioVoiceReactNativeAssets";
 
 @interface TwilioVoiceReactNative (CallKit) <CXProviderDelegate, TVOCallDelegate, AVAudioPlayerDelegate>
 
@@ -463,32 +468,56 @@ previousWarnings:(NSSet<NSNumber *> *)previousWarnings {
 
 #pragma mark - Ringback
 
+// Resources vendored by this pod live in its own resource bundle, never in the
+// host app's mainBundle. Looking them up in mainBundle is what made ringback a
+// silent no-op on iOS since 2021 (PRO-5724). Under static linking the bundle is
+// copied into the app; under use_frameworks! it sits inside the framework --
+// bundleForClass: plus the nested-bundle lookup covers both, and falls back to
+// the containing bundle if CocoaPods flattened it.
+- (NSBundle *)tvrn_resourceBundle {
+    NSBundle *containingBundle = [NSBundle bundleForClass:[self class]];
+    NSURL *bundleURL = [containingBundle URLForResource:kTwilioVoiceReactNativeResourceBundleName
+                                          withExtension:@"bundle"];
+    return bundleURL ? [NSBundle bundleWithURL:bundleURL] : containingBundle;
+}
+
 - (void)playRingback {
-    NSString *ringtonePath = [[NSBundle mainBundle] pathForResource:@"ringtone" ofType:@"wav"];
-    if ([ringtonePath length] <= 0) {
-        NSLog(@"Can't find sound file");
+    NSString *ringtonePath = [[self tvrn_resourceBundle] pathForResource:@"ringtone" ofType:@"wav"];
+    if (ringtonePath.length == 0) {
+        // RCTLogError, not NSLog: an unplayable ringback must not kill the call,
+        // but it must not hide in the console for another five years either.
+        RCTLogError(@"[TwilioVoiceReactNative] Ringback asset 'ringtone.wav' not found in %@.bundle -- outgoing calls will be silent while ringing.",
+                    kTwilioVoiceReactNativeResourceBundleName);
         return;
     }
-    
+
     NSError *error;
-    self.ringbackPlayer = [[AVAudioPlayer alloc] initWithContentsOfURL:[NSURL URLWithString:ringtonePath] error:&error];
-    if (error != nil) {
-        NSLog(@"Failed to initialize audio player: %@", error);
-    } else {
-        self.ringbackPlayer.delegate = self;
-        self.ringbackPlayer.numberOfLoops = -1;
-        
-        self.ringbackPlayer.volume = 1.0f;
-        [self.ringbackPlayer play];
+    // fileURLWithPath, not URLWithString: pathForResource returns a filesystem
+    // path, which URLWithString turns into a scheme-less URL AVAudioPlayer
+    // cannot open (and nil outright if the path contains a space).
+    self.ringbackPlayer = [[AVAudioPlayer alloc] initWithContentsOfURL:[NSURL fileURLWithPath:ringtonePath]
+                                                                 error:&error];
+    if (self.ringbackPlayer == nil) {
+        RCTLogError(@"[TwilioVoiceReactNative] Failed to initialize ringback player: %@", error);
+        return;
     }
+
+    // ponytail: no AVAudioSession category/activation set here -- nothing else in
+    // this SDK touches the session, it is owned by TVODefaultAudioDevice + CallKit.
+    // If a device test shows the tone inaudible or on the wrong route, that is the
+    // knob to turn.
+    self.ringbackPlayer.delegate = self;
+    self.ringbackPlayer.numberOfLoops = -1;
+    self.ringbackPlayer.volume = 1.0f;
+    [self.ringbackPlayer play];
 }
 
 - (void)stopRingback {
-    if (!self.ringbackPlayer.isPlaying) {
-        return;
-    }
-    
+    // No isPlaying guard: that left a non-playing player retained, and messaging
+    // nil is a no-op anyway. Releasing it also resets playback position, so the
+    // next call starts the tone from the top rather than mid-loop.
     [self.ringbackPlayer stop];
+    self.ringbackPlayer = nil;
 }
 
 - (void)audioPlayerDidFinishPlaying:(AVAudioPlayer *)player successfully:(BOOL)flag {
@@ -500,7 +529,9 @@ previousWarnings:(NSSet<NSNumber *> *)previousWarnings {
 }
 
 - (void)audioPlayerDecodeErrorDidOccur:(AVAudioPlayer *)player error:(NSError *)error {
-    NSLog(@"Decode error occurred: %@", error);
+    // The last silent path: a wav that resolves and initializes but cannot be
+    // decoded fails exactly like PRO-5724 did, with no signal at all.
+    RCTLogError(@"[TwilioVoiceReactNative] Ringback decode error -- the tone will be silent: %@", error);
 }
 
 #pragma mark - Warning event conversion
