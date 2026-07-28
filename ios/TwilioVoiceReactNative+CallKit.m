@@ -249,6 +249,19 @@ NSString * const kTwilioVoiceReactNativeResourceBundleName = @"TwilioVoiceReactN
 
 - (void)providerDidReset:(CXProvider *)provider {
     [TwilioVoiceReactNative twilioAudioDevice].enabled = NO;
+
+    // The only path that reaches "ringback starts and never stops". A reset
+    // orphans the TVOCall, so no didDisconnect fires and callDisconnected: --
+    // the usual owner of stopRingback -- never runs, leaving the tone looping
+    // with no call behind it and no way for the user to silence it.
+    //
+    // callMap is deliberately left populated: it is the sole strong reference
+    // to the live TVOCalls, and every other consumer (performEndCallAction:,
+    // getCalls, sendCallMessage) reads it to reach one. Clearing it here would
+    // dealloc calls that are still up on the wire with nothing left to
+    // disconnect them. Doing this properly means disconnecting each call and
+    // emitting the JS events, which is a behavioral change, not a leak fix.
+    [self stopRingback];
 }
 
 - (void)providerDidBegin:(CXProvider *)provider {
@@ -509,10 +522,51 @@ previousWarnings:(NSSet<NSNumber *> *)previousWarnings {
     self.ringbackPlayer.delegate = self;
     self.ringbackPlayer.numberOfLoops = -1;
     self.ringbackPlayer.volume = 1.0f;
+
+    // AVAudioPlayer pauses on interruption and never resumes on its own. An
+    // incoming cellular or FaceTime call mid-ring would otherwise kill the tone
+    // for the rest of the ring with no error and no log -- the same silence
+    // PRO-5724 is about, arriving by a different route.
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(handleRingbackInterruption:)
+                                                 name:AVAudioSessionInterruptionNotification
+                                               object:nil];
+
     [self.ringbackPlayer play];
 }
 
+- (void)handleRingbackInterruption:(NSNotification *)notification {
+    // Stale notification after the call moved on; nothing to resume.
+    if (self.ringbackPlayer == nil) {
+        return;
+    }
+
+    AVAudioSessionInterruptionType type =
+        [notification.userInfo[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue];
+    if (type != AVAudioSessionInterruptionTypeEnded) {
+        return;
+    }
+
+    AVAudioSessionInterruptionOptions options =
+        [notification.userInfo[AVAudioSessionInterruptionOptionKey] unsignedIntegerValue];
+    if ((options & AVAudioSessionInterruptionOptionShouldResume) == 0) {
+        RCTLogError(@"[TwilioVoiceReactNative] Audio session interruption ended without ShouldResume -- ringback will stay silent for the rest of this ring.");
+        return;
+    }
+
+    if (![self.ringbackPlayer play]) {
+        RCTLogError(@"[TwilioVoiceReactNative] Failed to resume ringback after audio session interruption -- the tone will be silent for the rest of this ring.");
+    }
+}
+
 - (void)stopRingback {
+    // Unregister by name, never the blanket removeObserver:self -- this object
+    // observes push-registry and route-change notifications for its whole
+    // lifetime, and a blanket removal here would silently tear those down too.
+    [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                    name:AVAudioSessionInterruptionNotification
+                                                  object:nil];
+
     // No isPlaying guard: that left a non-playing player retained, and messaging
     // nil is a no-op anyway. Releasing it also resets playback position, so the
     // next call starts the tone from the top rather than mid-loop.
