@@ -592,8 +592,14 @@ previousWarnings:(NSSet<NSNumber *> *)previousWarnings {
 
 - (NSString *)getSimplifiedISO8601FormattedTimestamp:(NSDate *)date {
     NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
-    NSLocale *locale = [NSLocale currentLocale];
-    [formatter setLocale:locale];
+    // en_US_POSIX, never currentLocale (Apple QA1480). With a user locale, the
+    // device's 12/24-Hour Time switch overrides the format string: on a phone set
+    // to 12-hour time "HH" renders 1-12 and the AM/PM designator is dropped
+    // entirely, because the pattern has no "a". 14:31 serializes as "02:31", JS
+    // parses it as 02:31, and the call timer reads exactly 12 hours too high --
+    // the 720:03 on a 3-second-old call reported in PRO-5724. Android already
+    // does this correctly (ReactNativeArgumentsSerializer uses Locale.US).
+    formatter.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
     [formatter setDateFormat:@"yyyy'-'MM'-'dd'T'HH':'mm':'ss'.'SSSZ"];
 
     return [formatter stringFromDate:date];
