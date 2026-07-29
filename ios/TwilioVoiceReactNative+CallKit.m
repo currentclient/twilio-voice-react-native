@@ -536,27 +536,37 @@ previousWarnings:(NSSet<NSNumber *> *)previousWarnings {
 }
 
 - (void)handleRingbackInterruption:(NSNotification *)notification {
-    // Stale notification after the call moved on; nothing to resume.
-    if (self.ringbackPlayer == nil) {
-        return;
-    }
+    // AVAudioSessionInterruptionNotification is not documented to be delivered on
+    // the main queue, and this is the only reader of ringbackPlayer that is not
+    // already main-queue-confined. ringbackPlayer is nonatomic, and stopRingback
+    // nils (releases) it from main-queue delegate callbacks -- reading it off-queue
+    // races that release, which is a use-after-free, not a nil no-op. Hopping the
+    // whole body onto the main queue puts every access on the same queue as
+    // playRingback/stopRingback. Note the body must RE-READ self.ringbackPlayer at
+    // execution time; capturing the pointer here would reintroduce the same race.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        // Stale notification after the call moved on; nothing to resume.
+        if (self.ringbackPlayer == nil) {
+            return;
+        }
 
-    AVAudioSessionInterruptionType type =
-        [notification.userInfo[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue];
-    if (type != AVAudioSessionInterruptionTypeEnded) {
-        return;
-    }
+        AVAudioSessionInterruptionType type =
+            [notification.userInfo[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue];
+        if (type != AVAudioSessionInterruptionTypeEnded) {
+            return;
+        }
 
-    AVAudioSessionInterruptionOptions options =
-        [notification.userInfo[AVAudioSessionInterruptionOptionKey] unsignedIntegerValue];
-    if ((options & AVAudioSessionInterruptionOptionShouldResume) == 0) {
-        RCTLogError(@"[TwilioVoiceReactNative] Audio session interruption ended without ShouldResume -- ringback will stay silent for the rest of this ring.");
-        return;
-    }
+        AVAudioSessionInterruptionOptions options =
+            [notification.userInfo[AVAudioSessionInterruptionOptionKey] unsignedIntegerValue];
+        if ((options & AVAudioSessionInterruptionOptionShouldResume) == 0) {
+            RCTLogError(@"[TwilioVoiceReactNative] Audio session interruption ended without ShouldResume -- ringback will stay silent for the rest of this ring.");
+            return;
+        }
 
-    if (![self.ringbackPlayer play]) {
-        RCTLogError(@"[TwilioVoiceReactNative] Failed to resume ringback after audio session interruption -- the tone will be silent for the rest of this ring.");
-    }
+        if (![self.ringbackPlayer play]) {
+            RCTLogError(@"[TwilioVoiceReactNative] Failed to resume ringback after audio session interruption -- the tone will be silent for the rest of this ring.");
+        }
+    });
 }
 
 - (void)stopRingback {
