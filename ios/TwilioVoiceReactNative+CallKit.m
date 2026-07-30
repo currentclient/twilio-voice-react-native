@@ -536,27 +536,37 @@ previousWarnings:(NSSet<NSNumber *> *)previousWarnings {
 }
 
 - (void)handleRingbackInterruption:(NSNotification *)notification {
-    // Stale notification after the call moved on; nothing to resume.
-    if (self.ringbackPlayer == nil) {
-        return;
-    }
+    // AVAudioSessionInterruptionNotification is not documented to be delivered on
+    // the main queue, and this is the only reader of ringbackPlayer that is not
+    // already main-queue-confined. ringbackPlayer is nonatomic, and stopRingback
+    // nils (releases) it from main-queue delegate callbacks -- reading it off-queue
+    // races that release, which is a use-after-free, not a nil no-op. Hopping the
+    // whole body onto the main queue puts every access on the same queue as
+    // playRingback/stopRingback. Note the body must RE-READ self.ringbackPlayer at
+    // execution time; capturing the pointer here would reintroduce the same race.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        // Stale notification after the call moved on; nothing to resume.
+        if (self.ringbackPlayer == nil) {
+            return;
+        }
 
-    AVAudioSessionInterruptionType type =
-        [notification.userInfo[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue];
-    if (type != AVAudioSessionInterruptionTypeEnded) {
-        return;
-    }
+        AVAudioSessionInterruptionType type =
+            [notification.userInfo[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue];
+        if (type != AVAudioSessionInterruptionTypeEnded) {
+            return;
+        }
 
-    AVAudioSessionInterruptionOptions options =
-        [notification.userInfo[AVAudioSessionInterruptionOptionKey] unsignedIntegerValue];
-    if ((options & AVAudioSessionInterruptionOptionShouldResume) == 0) {
-        RCTLogError(@"[TwilioVoiceReactNative] Audio session interruption ended without ShouldResume -- ringback will stay silent for the rest of this ring.");
-        return;
-    }
+        AVAudioSessionInterruptionOptions options =
+            [notification.userInfo[AVAudioSessionInterruptionOptionKey] unsignedIntegerValue];
+        if ((options & AVAudioSessionInterruptionOptionShouldResume) == 0) {
+            RCTLogError(@"[TwilioVoiceReactNative] Audio session interruption ended without ShouldResume -- ringback will stay silent for the rest of this ring.");
+            return;
+        }
 
-    if (![self.ringbackPlayer play]) {
-        RCTLogError(@"[TwilioVoiceReactNative] Failed to resume ringback after audio session interruption -- the tone will be silent for the rest of this ring.");
-    }
+        if (![self.ringbackPlayer play]) {
+            RCTLogError(@"[TwilioVoiceReactNative] Failed to resume ringback after audio session interruption -- the tone will be silent for the rest of this ring.");
+        }
+    });
 }
 
 - (void)stopRingback {
@@ -592,8 +602,14 @@ previousWarnings:(NSSet<NSNumber *> *)previousWarnings {
 
 - (NSString *)getSimplifiedISO8601FormattedTimestamp:(NSDate *)date {
     NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
-    NSLocale *locale = [NSLocale currentLocale];
-    [formatter setLocale:locale];
+    // en_US_POSIX, never currentLocale (Apple QA1480). With a user locale, the
+    // device's 12/24-Hour Time switch overrides the format string: on a phone set
+    // to 12-hour time "HH" renders 1-12 and the AM/PM designator is dropped
+    // entirely, because the pattern has no "a". 14:31 serializes as "02:31", JS
+    // parses it as 02:31, and the call timer reads exactly 12 hours too high --
+    // the 720:03 on a 3-second-old call reported in PRO-5724. Android already
+    // does this correctly (ReactNativeArgumentsSerializer uses Locale.US).
+    formatter.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
     [formatter setDateFormat:@"yyyy'-'MM'-'dd'T'HH':'mm':'ss'.'SSSZ"];
 
     return [formatter stringFromDate:date];
