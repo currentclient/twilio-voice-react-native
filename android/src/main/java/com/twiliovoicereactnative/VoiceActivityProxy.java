@@ -120,10 +120,11 @@ public class VoiceActivityProxy {
    * subclass) on API 31+, so catching the base class covers every SDK this module supports
    * (minSdk 24) without an SDK_INT branch.
    *
-   * ACTION_ACCEPT_CALL is retried as a foreground start because VoiceService.acceptCall()
-   * promotes itself via startForeground(); the other forwarded actions only post a plain
-   * notification, so retrying those would trade this crash for a guaranteed
-   * ForegroundServiceDidNotStartInTimeException — log and drop instead.
+   * Only ACTION_ACCEPT_CALL is retried as a foreground start, and only when VoiceService
+   * reports it can actually promote itself — a foreground start whose startForeground() never
+   * lands dies asynchronously with ForegroundServiceDidNotStartInTimeException, which no
+   * try/catch here can intercept. Every other case logs and drops: the remaining forwarded
+   * actions only post a plain notification and never promote at all.
    */
   private void startVoiceService(Intent intent, String action) {
     try {
@@ -131,6 +132,12 @@ public class VoiceActivityProxy {
     } catch (IllegalStateException e) {
       if (!Constants.ACTION_ACCEPT_CALL.equals(action)) {
         logger.warning(e, "startService() rejected for action=" + action + ", dropping");
+        return;
+      }
+      if (!VoiceService.canPromoteToForeground(context)) {
+        logger.warning(e, "startService() rejected for ACTION_ACCEPT_CALL and VoiceService " +
+          "cannot promote itself to foreground (POST_NOTIFICATIONS denied), dropping rather " +
+          "than risking ForegroundServiceDidNotStartInTimeException");
         return;
       }
       logger.warning(e, "startService() rejected, retrying ACTION_ACCEPT_CALL as a " +

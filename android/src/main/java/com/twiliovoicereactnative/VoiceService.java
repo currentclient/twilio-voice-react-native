@@ -364,10 +364,24 @@ public class VoiceService extends Service {
       (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
     mNotificationManager.notify(notificationId, notification);
   }
+  /**
+   * Whether starting this service as a foreground service will actually result in a
+   * startForeground() call. The promotion happens via createOrReplaceForegroundNotification(),
+   * which posts nothing when POST_NOTIFICATIONS is denied — so the promotion is conditional,
+   * not guaranteed.
+   *
+   * Anything that starts this service with Context.startForegroundService() must consult this
+   * first. Starting a foreground service that never calls startForeground() is fatal
+   * (ForegroundServiceDidNotStartInTimeException), and the system throws that asynchronously
+   * once the promotion window expires — the start site cannot catch it.
+   */
+  static boolean canPromoteToForeground(@NonNull Context context) {
+    return ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
+      == PackageManager.PERMISSION_GRANTED;
+  }
   private void createOrReplaceForegroundNotification(final int notificationId,
                                                      final Notification notification) {
-    if (ActivityCompat.checkSelfPermission(VoiceService.this, Manifest.permission.POST_NOTIFICATIONS)
-      == PackageManager.PERMISSION_GRANTED) {
+    if (canPromoteToForeground(VoiceService.this)) {
       foregroundNotification(notificationId, notification);
     } else {
       logger.warning("WARNING: Notification not posted, permission not granted");
