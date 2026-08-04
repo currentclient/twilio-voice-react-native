@@ -5,6 +5,7 @@ import java.util.Vector;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.BackgroundServiceStartNotAllowedException;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
@@ -13,6 +14,7 @@ import android.view.Window;
 import android.view.WindowManager;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.RequiresApi;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
@@ -109,7 +111,42 @@ public class VoiceActivityProxy {
     Intent copiedIntent = new Intent(intent);
     copiedIntent.setClass(context.getApplicationContext(), VoiceService.class);
     copiedIntent.setFlags(0);
-    context.getApplicationContext().startService(copiedIntent);
+    startVoiceService(copiedIntent, action);
+  }
+
+  /**
+   * Starts VoiceService for a forwarded call intent. On API 31+ the OS can reject a plain
+   * background startService() call with BackgroundServiceStartNotAllowedException if this
+   * Activity's process hasn't yet been registered as visible at the moment onCreate()/
+   * onNewIntent() runs it — a timing race on cold/background launches (PRO-6096), not
+   * something specific to one device. ACTION_ACCEPT_CALL is retried as a foreground service
+   * start because VoiceService.acceptCall() promotes itself to foreground immediately; other
+   * forwarded actions only post a plain notification, so retrying those as foreground would
+   * just trade this crash for a guaranteed ForegroundServiceDidNotStartInTimeException — log
+   * and drop instead.
+   */
+  private void startVoiceService(Intent intent, String action) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+      startVoiceServiceApi31(intent, action);
+    } else {
+      context.getApplicationContext().startService(intent);
+    }
+  }
+
+  @RequiresApi(Build.VERSION_CODES.S)
+  private void startVoiceServiceApi31(Intent intent, String action) {
+    try {
+      context.getApplicationContext().startService(intent);
+    } catch (BackgroundServiceStartNotAllowedException e) {
+      if (Constants.ACTION_ACCEPT_CALL.equals(action)) {
+        logger.warning(e, "startService() rejected as a background start, retrying " +
+          "ACTION_ACCEPT_CALL as a foreground service start");
+        ContextCompat.startForegroundService(context.getApplicationContext(), intent);
+      } else {
+        logger.warning(e, "startService() rejected as a background start for action=" +
+          action + ", dropping");
+      }
+    }
   }
 
   static {
