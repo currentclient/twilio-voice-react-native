@@ -6,6 +6,7 @@ import java.util.Vector;
 import android.Manifest;
 import android.app.Activity;
 import android.app.BackgroundServiceStartNotAllowedException;
+import android.app.ForegroundServiceStartNotAllowedException;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
@@ -141,7 +142,12 @@ public class VoiceActivityProxy {
       if (Constants.ACTION_ACCEPT_CALL.equals(action)) {
         logger.warning(e, "startService() rejected as a background start, retrying " +
           "ACTION_ACCEPT_CALL as a foreground service start");
-        ContextCompat.startForegroundService(context.getApplicationContext(), intent);
+        try {
+          ContextCompat.startForegroundService(context.getApplicationContext(), intent);
+        } catch (ForegroundServiceStartNotAllowedException fe) {
+          logger.warning(fe, "startForegroundService() retry for ACTION_ACCEPT_CALL " +
+            "also rejected, dropping");
+        }
       } else {
         logger.warning(e, "startService() rejected as a background start for action=" +
           action + ", dropping");
