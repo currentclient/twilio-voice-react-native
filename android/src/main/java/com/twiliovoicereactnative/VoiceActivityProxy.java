@@ -5,8 +5,6 @@ import java.util.Vector;
 
 import android.Manifest;
 import android.app.Activity;
-import android.app.BackgroundServiceStartNotAllowedException;
-import android.app.ForegroundServiceStartNotAllowedException;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
@@ -15,7 +13,6 @@ import android.view.Window;
 import android.view.WindowManager;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.RequiresApi;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
@@ -116,41 +113,32 @@ public class VoiceActivityProxy {
   }
 
   /**
-   * Starts VoiceService for a forwarded call intent. On API 31+ the OS can reject a plain
-   * background startService() call with BackgroundServiceStartNotAllowedException if this
-   * Activity's process hasn't yet been registered as visible at the moment onCreate()/
-   * onNewIntent() runs it — a timing race on cold/background launches (PRO-6096), not
-   * something specific to one device. ACTION_ACCEPT_CALL is retried as a foreground service
-   * start because VoiceService.acceptCall() promotes itself to foreground immediately; other
-   * forwarded actions only post a plain notification, so retrying those as foreground would
-   * just trade this crash for a guaranteed ForegroundServiceDidNotStartInTimeException — log
-   * and drop instead.
+   * Forwards a call intent to VoiceService, tolerating the OS refusing the start.
+   *
+   * Android's background-start restriction surfaces as a bare IllegalStateException on
+   * API 26-30 and as BackgroundServiceStartNotAllowedException (an IllegalStateException
+   * subclass) on API 31+, so catching the base class covers every SDK this module supports
+   * (minSdk 24) without an SDK_INT branch.
+   *
+   * ACTION_ACCEPT_CALL is retried as a foreground start because VoiceService.acceptCall()
+   * promotes itself via startForeground(); the other forwarded actions only post a plain
+   * notification, so retrying those would trade this crash for a guaranteed
+   * ForegroundServiceDidNotStartInTimeException — log and drop instead.
    */
   private void startVoiceService(Intent intent, String action) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-      startVoiceServiceApi31(intent, action);
-    } else {
-      context.getApplicationContext().startService(intent);
-    }
-  }
-
-  @RequiresApi(Build.VERSION_CODES.S)
-  private void startVoiceServiceApi31(Intent intent, String action) {
     try {
       context.getApplicationContext().startService(intent);
-    } catch (BackgroundServiceStartNotAllowedException e) {
-      if (Constants.ACTION_ACCEPT_CALL.equals(action)) {
-        logger.warning(e, "startService() rejected as a background start, retrying " +
-          "ACTION_ACCEPT_CALL as a foreground service start");
-        try {
-          ContextCompat.startForegroundService(context.getApplicationContext(), intent);
-        } catch (ForegroundServiceStartNotAllowedException fe) {
-          logger.warning(fe, "startForegroundService() retry for ACTION_ACCEPT_CALL " +
-            "also rejected, dropping");
-        }
-      } else {
-        logger.warning(e, "startService() rejected as a background start for action=" +
-          action + ", dropping");
+    } catch (IllegalStateException e) {
+      if (!Constants.ACTION_ACCEPT_CALL.equals(action)) {
+        logger.warning(e, "startService() rejected for action=" + action + ", dropping");
+        return;
+      }
+      logger.warning(e, "startService() rejected, retrying ACTION_ACCEPT_CALL as a " +
+        "foreground service start");
+      try {
+        ContextCompat.startForegroundService(context.getApplicationContext(), intent);
+      } catch (IllegalStateException fe) {
+        logger.warning(fe, "startForegroundService() retry also rejected, dropping");
       }
     }
   }
