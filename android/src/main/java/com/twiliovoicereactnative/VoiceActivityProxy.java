@@ -109,7 +109,45 @@ public class VoiceActivityProxy {
     Intent copiedIntent = new Intent(intent);
     copiedIntent.setClass(context.getApplicationContext(), VoiceService.class);
     copiedIntent.setFlags(0);
-    context.getApplicationContext().startService(copiedIntent);
+    startVoiceService(copiedIntent, action);
+  }
+
+  /**
+   * Forwards a call intent to VoiceService, tolerating the OS refusing the start.
+   *
+   * Android's background-start restriction surfaces as a bare IllegalStateException on
+   * API 26-30 and as BackgroundServiceStartNotAllowedException (an IllegalStateException
+   * subclass) on API 31+, so catching the base class covers every SDK this module supports
+   * (minSdk 24) without an SDK_INT branch.
+   *
+   * Only ACTION_ACCEPT_CALL is retried as a foreground start, and only when VoiceService
+   * reports it can actually promote itself — a foreground start whose startForeground() never
+   * lands dies asynchronously with ForegroundServiceDidNotStartInTimeException, which no
+   * try/catch here can intercept. Every other case logs and drops: the remaining forwarded
+   * actions only post a plain notification and never promote at all.
+   */
+  private void startVoiceService(Intent intent, String action) {
+    try {
+      context.getApplicationContext().startService(intent);
+    } catch (IllegalStateException e) {
+      if (!Constants.ACTION_ACCEPT_CALL.equals(action)) {
+        logger.warning(e, "startService() rejected for action=" + action + ", dropping");
+        return;
+      }
+      if (!VoiceService.canPromoteToForeground(context)) {
+        logger.warning(e, "startService() rejected for ACTION_ACCEPT_CALL and VoiceService " +
+          "cannot promote itself to foreground (POST_NOTIFICATIONS denied), dropping rather " +
+          "than risking ForegroundServiceDidNotStartInTimeException");
+        return;
+      }
+      logger.warning(e, "startService() rejected, retrying ACTION_ACCEPT_CALL as a " +
+        "foreground service start");
+      try {
+        ContextCompat.startForegroundService(context.getApplicationContext(), intent);
+      } catch (IllegalStateException fe) {
+        logger.warning(fe, "startForegroundService() retry also rejected, dropping");
+      }
+    }
   }
 
   static {
