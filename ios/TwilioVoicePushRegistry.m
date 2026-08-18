@@ -158,31 +158,47 @@ withCompletionHandler:(void (^)(void))completion {
 
         sPendingVoIPCompletion = completion;
 
-        // Ensure the Twilio audio device is configured.
-        // The RN module normally does this, but it may not be initialized yet
-        // after a long background suspension.
-        if (![TwilioVoiceReactNative twilioAudioDevice]) {
-            NSLog(@"[TwilioVoicePushRegistry] RN module audio device not ready — configuring fallback audio device");
-            sPushRegistryAudioDevice = [TVODefaultAudioDevice audioDevice];
-            TwilioVoiceSDK.audioDevice = sPushRegistryAudioDevice;
-        }
+        // Both the audio-device fallback setup and handleNotification: below
+        // call into AVFoundation/TwilioVoice internals that can throw for a
+        // payload or audio-session state we haven't seen in testing (PRO-6691
+        // crashed here with zero application frames — every frame was
+        // PushKit/libdispatch/objc, consistent with something throwing before
+        // the "no synchronous delegate callback" fallback below ever ran). An
+        // uncaught exception unwinds straight out of this method, past that
+        // fallback, and PushKit's post-return check then kills the app because
+        // nothing was ever reported. @try/@finally guarantees the fallback
+        // still runs — reporting a placeholder call — no matter what happens
+        // inside this block.
+        @try {
+            // Ensure the Twilio audio device is configured.
+            // The RN module normally does this, but it may not be initialized yet
+            // after a long background suspension.
+            if (![TwilioVoiceReactNative twilioAudioDevice]) {
+                NSLog(@"[TwilioVoicePushRegistry] RN module audio device not ready — configuring fallback audio device");
+                sPushRegistryAudioDevice = [TVODefaultAudioDevice audioDevice];
+                TwilioVoiceSDK.audioDevice = sPushRegistryAudioDevice;
+            }
 
-        // Handle the notification DIRECTLY in native code.
-        // For a call invite or a cancellation this SYNCHRONOUSLY invokes
-        // callInviteReceived: or cancelledCallInviteReceived: respectively,
-        // either of which reports/satisfies the pending completion and clears
-        // sPendingVoIPCompletion before this call returns. A payload the SDK
-        // doesn't recognize resolves to neither and leaves it set.
-        [TwilioVoiceSDK handleNotification:payload.dictionaryPayload
-                                  delegate:self
-                             delegateQueue:nil
-                       callMessageDelegate:nil];
-
-        // Nothing resolved synchronously above (an invalid, unrecognized, or
-        // duplicate payload) — we must still report before returning from this
-        // method, right now, not on a delay (PRO-5725).
-        if (sPendingVoIPCompletion) {
-            TVPRSatisfyPendingPushWithPlaceholder(nil, @"no synchronous delegate callback for this push");
+            // Handle the notification DIRECTLY in native code.
+            // For a call invite or a cancellation this SYNCHRONOUSLY invokes
+            // callInviteReceived: or cancelledCallInviteReceived: respectively,
+            // either of which reports/satisfies the pending completion and clears
+            // sPendingVoIPCompletion before this call returns. A payload the SDK
+            // doesn't recognize resolves to neither and leaves it set.
+            [TwilioVoiceSDK handleNotification:payload.dictionaryPayload
+                                      delegate:self
+                                 delegateQueue:nil
+                           callMessageDelegate:nil];
+        } @catch (NSException *exception) {
+            NSLog(@"[TwilioVoicePushRegistry] Exception while handling VoIP push (%@: %@) — falling back to placeholder", exception.name, exception.reason);
+        } @finally {
+            // Nothing resolved synchronously above (an invalid, unrecognized,
+            // duplicate, or exception-raising payload) — we must still report
+            // before returning from this method, right now, not on a delay
+            // (PRO-5725, PRO-6691).
+            if (sPendingVoIPCompletion) {
+                TVPRSatisfyPendingPushWithPlaceholder(nil, @"no synchronous delegate callback for this push");
+            }
         }
         return;
     }
