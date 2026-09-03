@@ -109,9 +109,25 @@ No commits were dropped. Shrinking the patch set isn't possible yet because
 upstream's only forward motion since `1.7.0` is the 2.0 rewrite, which
 doesn't share code with our 1.x base.
 
-## 3. Version
+## 3. CI coverage of this change
+
+This repo has no `.github/workflows` directory and no CircleCI wired up
+(`.circleci/config.yml` exists but has no connected GitHub App — no run of
+it appears anywhere in this repo's CI history). The only automated check on
+any PR here, including this one, is GitHub's default CodeQL setup
+(`Analyze javascript-typescript/python/ruby`), a static scan, not a build or
+test run. There is no Android compile, no Java unit test, and no e2e/Detox
+run on this or any prior PR to this fork. The two backports in this PR are
+Java-only and have **no automated verification** — they were checked by
+manual read-through against the actual upstream fix diffs and this fork's
+current source, not by a green check. Flagging this as a real gap rather
+than implying coverage that doesn't exist; wiring up a real Android build/
+test job here is out of scope for this ticket.
+
+## 4. Version
 
 Fork version bumped `1.7.0-cc.1` → `1.7.0-cc.5` in `package.json` (the two
-backports above; no tag existed for the three untagged commits already
-ahead of `1.7.0-cc.4` on `main`, so this catches those up too). Tag `main`
-as `1.7.0-cc.5` once this merges.
+backports above; the field was already stale before this PR — six commits
+(`f2d17ec`, `af8763d`, `f7f1571`, `fa7da25`, `42d9b45`, `e4fbffb`) had landed
+on `main` since the `1.7.0-cc.4` tag with no version bump, so this catches
+those up too). Tag `main` as `1.7.0-cc.5` once this merges.
