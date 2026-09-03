@@ -27,6 +27,50 @@
 >
 > **Tracking upstream**: add `https://github.com/twilio/twilio-voice-react-native`
 > as the `upstream` remote and cherry-pick or merge release tags selectively.
+>
+> **Keeping this fork current** (PRO-7321)
+>
+> - *Drift detection.* `.github/workflows/upstream-drift-check.yml` runs
+>   weekly (and on demand via `workflow_dispatch`), compares
+>   `.upstream-tracking.json`'s `baseTag` against upstream's latest
+>   **stable** tag, and files a GitHub issue labeled `upstream-drift` on
+>   the `DRIFT_ISSUE_REPO` sink repo (an Actions repo variable, defaults to
+>   this repo) when we're `driftThresholdStableReleases` or more behind.
+>   It never opens a duplicate while one is still open. Triage that issue
+>   into a PRO ticket if action is warranted. This repo currently has
+>   **Issues disabled** and no `DRIFT_ISSUE_REPO` is set, so in practice it
+>   falls back to intentionally failing the scheduled run (with the drift
+>   details in the job log / step summary) as the signal — either
+>   re-enabling Issues here or pointing `DRIFT_ISSUE_REPO` at a repo that
+>   has them (plus a token with write access there, if it's not this repo)
+>   switches it back to filing real issues, no code change needed.
+> - *Patch series.* All 13 CC commits carried on top of `1.7.0` live as an
+>   ordered, re-appliable patch series in `patches/1.7.0/` (see
+>   `patches/1.7.0/SERIES.md` for what each one does and why). Applying the
+>   series with `git am` onto a clean `1.7.0` checkout reproduces this
+>   fork's `main` tree exactly — that's what makes a rebase mechanical
+>   instead of an archaeology dig.
+> - *Rebasing onto a new upstream tag:*
+>   1. `scripts/rebase-patches.sh <new-tag>` — fetches the tag, branches
+>      `cc-patches/<new-tag>` from it, and `git am`s the current series onto
+>      it. Resolve any conflicts the normal `git am` way.
+>   2. Run this repo's native builds/lint, then in `cc-mob-app` run the
+>      `TwilioRNVoiceDriver` conformance suite and a real-device PSTN voice
+>      smoke (`.maestro-real-device/`) against an app built against the
+>      rebased branch.
+>   3. Re-export the series from the new base
+>      (`git format-patch <new-tag>..cc-patches/<new-tag> -o patches/<new-tag> --binary`),
+>      update `.upstream-tracking.json`'s `baseTag`, tag the result
+>      (`<new-tag>-cc.1`), and push branch + tag.
+>   4. In `cc-mob-app`, bump the SHA pin (`package.json` +
+>      `package-lock.json`, two spots) to the **post-merge** commit on this
+>      fork's `main` — this repo squash-merges every PR, so a branch-head
+>      pin goes dangling the moment the branch is deleted (factory lessons
+>      L1759/L1760/L1766). Never pin an open PR's branch head.
+> - *Upstream 2.0.0.* Not GA yet (latest tag is `2.0.0-rc4`). See
+>   [`2.0.0-ADOPTION-PLAN.md`](./2.0.0-ADOPTION-PLAN.md) for the breaking-change
+>   assessment, patch-absorption check, and adoption gate — do not rebase
+>   onto it ahead of that plan.
 
 [![NPM](https://img.shields.io/npm/v/%40twilio/voice-react-native-sdk.svg?color=blue)](https://www.npmjs.com/package/%40twilio/voice-react-native-sdk) [![CircleCI](https://dl.circleci.com/status-badge/img/gh/twilio/twilio-voice-react-native/tree/main.svg?style=shield)](https://dl.circleci.com/status-badge/redirect/gh/twilio/twilio-voice-react-native/tree/main)
 

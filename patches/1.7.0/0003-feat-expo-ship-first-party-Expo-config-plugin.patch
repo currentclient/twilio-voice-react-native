@@ -1,0 +1,317 @@
+From f4d38f55bff430dcbfcb0ed9efc6bb893e1269f0 Mon Sep 17 00:00:00 2001
+From: Jeff Hutchins <jeff@currentclient.com>
+Date: Wed, 10 Jun 2026 10:35:39 -0600
+Subject: [PATCH 03/12] feat(expo): ship first-party Expo config plugin
+
+Adds an Expo config plugin (app.plugin.js + plugin/index.js) that
+encapsulates all native project mutations previously maintained in
+cc-mob-app's config/plugins/withTwilioVoiceReactNative.js:
+
+- iOS Info.plist: UIBackgroundModes (audio, voip) and NSUserActivityTypes
+  (INStartAudioCallIntent, INStartCallIntent)
+- iOS Xcode project: HEADER_SEARCH_PATHS entry for the SDK ios/ directory
+- Android: calling/foreground-service permissions and the VoiceService
+  manifest entry
+- Optional app-provided services via props: android.messagingServiceClass
+  (custom Firebase messaging service) and android.phoneCallServiceClass
+  (phoneCall foreground service, with phoneCallServiceStopWithTask)
+
+Package changes for consumption as a git dependency:
+- version 1.7.0-cc.1, app.plugin.js and plugin/ added to files
+- prepare script renamed to build:lib so consumer installs use the
+  committed lib/ output instead of rebuilding (lib/ is tracked in-tree)
+- README documents the fork's delta, consumption, and upstream tracking
+
+PRO-3980
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+---
+ README.md       |  29 ++++++++
+ app.plugin.js   |   1 +
+ package.json    |  10 ++-
+ plugin/index.js | 189 ++++++++++++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 225 insertions(+), 4 deletions(-)
+ create mode 100644 app.plugin.js
+ create mode 100644 plugin/index.js
+
+diff --git a/README.md b/README.md
+index f90b842..64fb92d 100644
+--- a/README.md
++++ b/README.md
+@@ -1,4 +1,33 @@
+ # Twilio Voice React Native SDK
++
++> **CurrentClient fork** (`currentclient/twilio-voice-react-native`)
++>
++> This is CurrentClient's first-party fork of the Twilio Voice React Native
++> SDK, tracking upstream `1.7.0`. It replaces the
++> `patches/@twilio+voice-react-native-sdk+1.7.0.patch` previously maintained
++> in `cc-mob-app` via patch-package. See PRO-3980.
++>
++> **What differs from upstream**
++> - Android: ringer-mode aware `MediaPlayerManager` rewrite, `VoiceService`
++>   null-safety hardening, lock-screen window-flag fixes (`fix(android)` commit)
++> - iOS: early CallKit reporting via a shared `CXProvider`, native VoIP push
++>   handling with deferred PushKit completion, cold-start call-invite race fix
++>   (`fix(ios)` commit)
++> - Ships an **Expo config plugin** (`app.plugin.js` / `plugin/`): background
++>   modes, user-activity types, header search path, Android permissions and
++>   service declarations. See `plugin/index.js` for supported props.
++>
++> **Consuming** (in `package.json`):
++> ```json
++> "@twilio/voice-react-native-sdk": "github:currentclient/twilio-voice-react-native#<branch-or-tag>"
++> ```
++> The committed `lib/` build output is used as-is (the upstream `prepare`
++> script was renamed to `build:lib` so git installs do not rebuild). If you
++> change TypeScript sources, run `yarn build:lib` and commit the result.
++>
++> **Tracking upstream**: add `https://github.com/twilio/twilio-voice-react-native`
++> as the `upstream` remote and cherry-pick or merge release tags selectively.
++
+ [![NPM](https://img.shields.io/npm/v/%40twilio/voice-react-native-sdk.svg?color=blue)](https://www.npmjs.com/package/%40twilio/voice-react-native-sdk) [![CircleCI](https://dl.circleci.com/status-badge/img/gh/twilio/twilio-voice-react-native/tree/main.svg?style=shield)](https://dl.circleci.com/status-badge/redirect/gh/twilio/twilio-voice-react-native/tree/main)
+ 
+ Twilio's Voice React Native SDK allows you to add real-time voice and PSTN calling to your React Native apps.
+diff --git a/app.plugin.js b/app.plugin.js
+new file mode 100644
+index 0000000..7590f2e
+--- /dev/null
++++ b/app.plugin.js
+@@ -0,0 +1 @@
++module.exports = require('./plugin');
+diff --git a/package.json b/package.json
+index 7f1458b..39ece33 100644
+--- a/package.json
++++ b/package.json
+@@ -1,7 +1,7 @@
+ {
+   "name": "@twilio/voice-react-native-sdk",
+-  "version": "1.7.0",
+-  "description": "Twilio Voice React Native SDK",
++  "version": "1.7.0-cc.1",
++  "description": "Twilio Voice React Native SDK (CurrentClient fork with Expo config plugin)",
+   "main": "lib/commonjs/index",
+   "module": "lib/module/index",
+   "types": "lib/typescript/index.d.ts",
+@@ -13,6 +13,8 @@
+     "android",
+     "ios",
+     "cpp",
++    "app.plugin.js",
++    "plugin",
+     "twilio-voice-react-native.podspec",
+     "!lib/typescript/test/app",
+     "!android/build",
+@@ -27,7 +29,7 @@
+     "build:api:extractor": "api-extractor run --local",
+     "build:api:documenter": "api-documenter markdown --input-folder ./temp --output-folder ./docs/api",
+     "build:constants": "node ./scripts/generate-constants.js",
+-    "build:docs": "yarn run prepare && yarn run build:api:extractor && yarn run build:api:documenter",
++    "build:docs": "yarn run build:lib && yarn run build:api:extractor && yarn run build:api:documenter",
+     "build:errors": "node ./scripts/generate-errors.js",
+     "check:lint": "eslint \"**/*.{js,ts,tsx}\"",
+     "check:test": "jest",
+@@ -35,7 +37,7 @@
+     "check:api": "git diff --exit-code src/error/generated.ts api/",
+     "check": "yarn run build:constants && yarn run build:errors && yarn run build:docs && yarn run check:api && yarn run check:type && yarn run check:lint && yarn run check:test --coverage",
+     "pods": "cd test/app && pod-install --quiet",
+-    "prepare": "yarn run build:constants && bob build",
++    "build:lib": "yarn run build:constants && bob build",
+     "release": "release",
+     "test": "jest"
+   },
+diff --git a/plugin/index.js b/plugin/index.js
+new file mode 100644
+index 0000000..15ee253
+--- /dev/null
++++ b/plugin/index.js
+@@ -0,0 +1,189 @@
++/**
++ * Expo config plugin for @twilio/voice-react-native-sdk (CurrentClient fork).
++ *
++ * Encapsulates every native-project mutation the SDK needs so consuming apps
++ * do not have to maintain their own config plugin:
++ *
++ * iOS
++ *  - Info.plist: UIBackgroundModes (audio, voip)
++ *  - Info.plist: NSUserActivityTypes (INStartAudioCallIntent, INStartCallIntent)
++ *  - Xcode project: HEADER_SEARCH_PATHS entry for the SDK's ios/ directory
++ *
++ * Android
++ *  - uses-permission entries required for calling / foreground services
++ *  - <service> entry for com.twiliovoicereactnative.VoiceService
++ *  - optional <service> entries supplied by the app (custom Firebase
++ *    messaging service, phone-call foreground service) via plugin props
++ *
++ * Props (all optional):
++ *  {
++ *    "android": {
++ *      // Fully-qualified class name of an app-provided
++ *      // FirebaseMessagingService that handles Twilio VoIP pushes.
++ *      // Registered with the com.google.firebase.MESSAGING_EVENT intent
++ *      // filter, exported=true, stopWithTask=false.
++ *      "messagingServiceClass": "com.example.app.voip.CustomVoIPMessagingService",
++ *
++ *      // App-provided foreground service with type "phoneCall"
++ *      // (e.g. a media-session service used during active calls).
++ *      "phoneCallServiceClass": "com.example.app.voip.CallMediaSessionService",
++ *      "phoneCallServiceStopWithTask": true
++ *    }
++ *  }
++ */
++const {
++  AndroidConfig,
++  createRunOncePlugin,
++  withAndroidManifest,
++  withInfoPlist,
++  withXcodeProject,
++} = require('expo/config-plugins');
++
++const pkg = require('../package.json');
++
++const IOS_BACKGROUND_MODES = ['audio', 'voip'];
++const IOS_USER_ACTIVITY_TYPES = ['INStartAudioCallIntent', 'INStartCallIntent'];
++const IOS_HEADER_SEARCH_PATH =
++  '"$(SRCROOT)/../node_modules/@twilio/voice-react-native-sdk/ios"';
++
++const ANDROID_PERMISSIONS = [
++  'android.permission.DISABLE_KEYGUARD',
++  'android.permission.INTERNET',
++  'android.permission.POST_NOTIFICATIONS',
++  'android.permission.USE_FULL_SCREEN_INTENT',
++  'android.permission.VIBRATE',
++  'android.permission.WAKE_LOCK',
++  'android.permission.FOREGROUND_SERVICE',
++  'android.permission.FOREGROUND_SERVICE_MICROPHONE',
++  'android.permission.FOREGROUND_SERVICE_PHONE_CALL',
++  'android.permission.MANAGE_OWN_CALLS',
++];
++
++const withVoiceInfoPlist = (config) =>
++  withInfoPlist(config, (mod) => {
++    const plist = mod.modResults;
++
++    if (!Array.isArray(plist.UIBackgroundModes)) {
++      plist.UIBackgroundModes = [];
++    }
++    for (const mode of IOS_BACKGROUND_MODES) {
++      if (!plist.UIBackgroundModes.includes(mode)) {
++        plist.UIBackgroundModes.push(mode);
++      }
++    }
++
++    if (!Array.isArray(plist.NSUserActivityTypes)) {
++      plist.NSUserActivityTypes = [];
++    }
++    for (const type of IOS_USER_ACTIVITY_TYPES) {
++      if (!plist.NSUserActivityTypes.includes(type)) {
++        plist.NSUserActivityTypes.push(type);
++      }
++    }
++
++    return mod;
++  });
++
++const COMMENT_KEY = /_comment$/;
++
++function unquote(str) {
++  return str ? str.replace(/^"(.*)"$/, '$1') : str;
++}
++
++function ensureHeaderSearchPath(project, file) {
++  const section = project.pbxXCBuildConfigurationSection();
++  const INHERITED = '"$(inherited)"';
++
++  for (const key of Object.keys(section)) {
++    if (COMMENT_KEY.test(key)) {
++      continue;
++    }
++    const buildSettings = section[key].buildSettings;
++    if (!buildSettings || unquote(buildSettings.PRODUCT_NAME) !== project.productName) {
++      continue;
++    }
++    if (!buildSettings.HEADER_SEARCH_PATHS) {
++      buildSettings.HEADER_SEARCH_PATHS = [INHERITED];
++    }
++    if (!buildSettings.HEADER_SEARCH_PATHS.includes(file)) {
++      buildSettings.HEADER_SEARCH_PATHS.push(file);
++    }
++  }
++}
++
++const withVoiceHeaderSearchPath = (config) =>
++  withXcodeProject(config, (mod) => {
++    ensureHeaderSearchPath(mod.modResults, IOS_HEADER_SEARCH_PATH);
++    return mod;
++  });
++
++const withVoiceAndroidManifest = (config, androidProps = {}) =>
++  withAndroidManifest(config, (mod) => {
++    const app = AndroidConfig.Manifest.getMainApplicationOrThrow(mod.modResults);
++
++    if (!Array.isArray(app.service)) {
++      app.service = [];
++    }
++
++    const ensureService = (service) => {
++      const exists = app.service.some(
++        (existing) => existing.$ && existing.$['android:name'] === service.$['android:name']
++      );
++      if (!exists) {
++        app.service.push(service);
++      }
++    };
++
++    if (androidProps.messagingServiceClass) {
++      ensureService({
++        $: {
++          'android:name': androidProps.messagingServiceClass,
++          'android:stopWithTask': 'false',
++          'android:exported': 'true',
++        },
++        'intent-filter': [
++          {
++            action: [{ $: { 'android:name': 'com.google.firebase.MESSAGING_EVENT' } }],
++          },
++        ],
++      });
++    }
++
++    if (androidProps.phoneCallServiceClass) {
++      const service = {
++        $: {
++          'android:name': androidProps.phoneCallServiceClass,
++          'android:foregroundServiceType': 'phoneCall',
++          'android:exported': 'false',
++        },
++      };
++      if (androidProps.phoneCallServiceStopWithTask !== undefined) {
++        service.$['android:stopWithTask'] = String(
++          androidProps.phoneCallServiceStopWithTask
++        );
++      }
++      ensureService(service);
++    }
++
++    // Declared in the SDK's own AndroidManifest.xml as well; re-declared here
++    // so the merged app manifest carries the foregroundServiceType explicitly.
++    ensureService({
++      $: {
++        'android:name': 'com.twiliovoicereactnative.VoiceService',
++        'android:foregroundServiceType': 'microphone',
++        'android:exported': 'false',
++      },
++    });
++
++    return mod;
++  });
++
++const withTwilioVoiceReactNative = (config, props = {}) => {
++  config = withVoiceInfoPlist(config);
++  config = withVoiceHeaderSearchPath(config);
++  config = AndroidConfig.Permissions.withPermissions(config, ANDROID_PERMISSIONS);
++  config = withVoiceAndroidManifest(config, props.android);
++  return config;
++};
++
++module.exports = createRunOncePlugin(withTwilioVoiceReactNative, pkg.name, pkg.version);

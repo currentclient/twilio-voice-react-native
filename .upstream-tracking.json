@@ -1,0 +1,8 @@
+{
+  "$comment": "Read by scripts/check-upstream-drift.mjs (run weekly by .github/workflows/upstream-drift-check.yml). Update baseTag after every rebase of the patches/ series onto a newer upstream tag — see README.md 'Keeping this fork current'.",
+  "upstreamRepo": "twilio/twilio-voice-react-native",
+  "baseTag": "1.7.0",
+  "patchSeriesDir": "patches/1.7.0",
+  "driftThresholdStableReleases": 1,
+  "prereleaseTagPattern": "-(rc|preview|alpha|beta|dev)"
+}

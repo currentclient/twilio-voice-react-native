@@ -1,0 +1,107 @@
+From 42d9b452f35ed5d4b58356c4d35ea0361507ae08 Mon Sep 17 00:00:00 2001
+From: "bumblebee-cc[bot]"
+ <311505466+bumblebee-cc[bot]@users.noreply.github.com>
+Date: Tue, 18 Aug 2026 15:11:04 -0600
+Subject: [PATCH 11/12] fix(ios): guard VoIP push handling against a
+ mid-handling exception (PRO-6691) (#12)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Crash log from PRO-6691 shows the app killed by
+-[PKPushRegistry _terminateAppIfThereAreUnhandledVoIPPushes] with an
+all-native stack (PushKit/libdispatch/objc, no app frames) — right as a
+call was coming in. PRO-4038/PRO-4264/PRO-5725 already cover the payload
+resolving to neither callInviteReceived: nor cancelledCallInviteReceived:,
+but none of them guard against the audio-device fallback setup or
+handleNotification: itself throwing: an uncaught exception there unwinds
+straight out of didReceiveIncomingPushWithPayload:forType:withCompletionHandler:,
+past the existing fallback check, leaving nothing reported before PushKit's
+post-return check fires.
+
+Wrap both calls in @try/@catch/@finally so the placeholder-satisfying
+fallback always runs — reporting (and immediately ending) a placeholder
+CallKit call — regardless of whether the SDK call threw.
+
+Co-authored-by: bumblebee-cc[bot] <311505466+bumblebee-cc[bot]@users.noreply.github.com>
+---
+ ios/TwilioVoicePushRegistry.m | 66 ++++++++++++++++++++++-------------
+ 1 file changed, 41 insertions(+), 25 deletions(-)
+
+diff --git a/ios/TwilioVoicePushRegistry.m b/ios/TwilioVoicePushRegistry.m
+index 9095bc1..55137bb 100644
+--- a/ios/TwilioVoicePushRegistry.m
++++ b/ios/TwilioVoicePushRegistry.m
+@@ -158,31 +158,47 @@ withCompletionHandler:(void (^)(void))completion {
+ 
+         sPendingVoIPCompletion = completion;
+ 
+-        // Ensure the Twilio audio device is configured.
+-        // The RN module normally does this, but it may not be initialized yet
+-        // after a long background suspension.
+-        if (![TwilioVoiceReactNative twilioAudioDevice]) {
+-            NSLog(@"[TwilioVoicePushRegistry] RN module audio device not ready — configuring fallback audio device");
+-            sPushRegistryAudioDevice = [TVODefaultAudioDevice audioDevice];
+-            TwilioVoiceSDK.audioDevice = sPushRegistryAudioDevice;
+-        }
+-
+-        // Handle the notification DIRECTLY in native code.
+-        // For a call invite or a cancellation this SYNCHRONOUSLY invokes
+-        // callInviteReceived: or cancelledCallInviteReceived: respectively,
+-        // either of which reports/satisfies the pending completion and clears
+-        // sPendingVoIPCompletion before this call returns. A payload the SDK
+-        // doesn't recognize resolves to neither and leaves it set.
+-        [TwilioVoiceSDK handleNotification:payload.dictionaryPayload
+-                                  delegate:self
+-                             delegateQueue:nil
+-                       callMessageDelegate:nil];
+-
+-        // Nothing resolved synchronously above (an invalid, unrecognized, or
+-        // duplicate payload) — we must still report before returning from this
+-        // method, right now, not on a delay (PRO-5725).
+-        if (sPendingVoIPCompletion) {
+-            TVPRSatisfyPendingPushWithPlaceholder(nil, @"no synchronous delegate callback for this push");
++        // Both the audio-device fallback setup and handleNotification: below
++        // call into AVFoundation/TwilioVoice internals that can throw for a
++        // payload or audio-session state we haven't seen in testing (PRO-6691
++        // crashed here with zero application frames — every frame was
++        // PushKit/libdispatch/objc, consistent with something throwing before
++        // the "no synchronous delegate callback" fallback below ever ran). An
++        // uncaught exception unwinds straight out of this method, past that
++        // fallback, and PushKit's post-return check then kills the app because
++        // nothing was ever reported. @try/@finally guarantees the fallback
++        // still runs — reporting a placeholder call — no matter what happens
++        // inside this block.
++        @try {
++            // Ensure the Twilio audio device is configured.
++            // The RN module normally does this, but it may not be initialized yet
++            // after a long background suspension.
++            if (![TwilioVoiceReactNative twilioAudioDevice]) {
++                NSLog(@"[TwilioVoicePushRegistry] RN module audio device not ready — configuring fallback audio device");
++                sPushRegistryAudioDevice = [TVODefaultAudioDevice audioDevice];
++                TwilioVoiceSDK.audioDevice = sPushRegistryAudioDevice;
++            }
++
++            // Handle the notification DIRECTLY in native code.
++            // For a call invite or a cancellation this SYNCHRONOUSLY invokes
++            // callInviteReceived: or cancelledCallInviteReceived: respectively,
++            // either of which reports/satisfies the pending completion and clears
++            // sPendingVoIPCompletion before this call returns. A payload the SDK
++            // doesn't recognize resolves to neither and leaves it set.
++            [TwilioVoiceSDK handleNotification:payload.dictionaryPayload
++                                      delegate:self
++                                 delegateQueue:nil
++                           callMessageDelegate:nil];
++        } @catch (NSException *exception) {
++            NSLog(@"[TwilioVoicePushRegistry] Exception while handling VoIP push (%@: %@) — falling back to placeholder", exception.name, exception.reason);
++        } @finally {
++            // Nothing resolved synchronously above (an invalid, unrecognized,
++            // duplicate, or exception-raising payload) — we must still report
++            // before returning from this method, right now, not on a delay
++            // (PRO-5725, PRO-6691).
++            if (sPendingVoIPCompletion) {
++                TVPRSatisfyPendingPushWithPlaceholder(nil, @"no synchronous delegate callback for this push");
++            }
+         }
+         return;
+     }

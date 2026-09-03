@@ -1,0 +1,163 @@
+From fa7da253ae15004ee5712dc098203efd3791bb29 Mon Sep 17 00:00:00 2001
+From: "bumblebee-cc[bot]"
+ <311505466+bumblebee-cc[bot]@users.noreply.github.com>
+Date: Wed, 5 Aug 2026 12:02:06 -0600
+Subject: [PATCH 10/12] PRO-6096: Android crash report (1.58.0) (#11)
+
+* fix(android): catch BackgroundServiceStartNotAllowedException (PRO-6096)
+
+VoiceActivityProxy.handleIntent() called Context.startService() unconditionally
+and uncaught when forwarding a call-related intent to VoiceService. On API 31+,
+Android can reject a plain background startService() call with
+BackgroundServiceStartNotAllowedException if the launching Activity's process
+hasn't yet been registered as visible at that exact moment -- a timing race on
+cold/background launches, not specific to one device (crash: Samsung Galaxy
+S22, Android 16, v1.58.0/263).
+
+Catch the exception on API 31+. ACTION_ACCEPT_CALL retries via
+ContextCompat.startForegroundService() since VoiceService.acceptCall()
+promotes itself to foreground immediately; other forwarded actions
+(ACTION_FOREGROUND_AND_DEPRIORITIZE_INCOMING_CALL_NOTIFICATION) only post a
+plain notification, so retrying those as foreground would trade this crash for
+a guaranteed ForegroundServiceDidNotStartInTimeException -- log and drop
+instead.
+
+The exception-handling call is isolated in its own @RequiresApi(S) method so
+verification of the newer class stays gated behind the SDK_INT check (minSdk
+is 24).
+
+* fix(android): catch ForegroundServiceStartNotAllowedException on retry (PRO-6096)
+
+Per review nit on #11: the ACTION_ACCEPT_CALL fallback to
+ContextCompat.startForegroundService() wasn't itself guarded, so the same
+class of API-31+ rejection (ForegroundServiceStartNotAllowedException) could
+still crash the retry path. Wrap it and log+drop for symmetry with the
+primary startService() catch.
+
+* refactor(android): catch IllegalStateException base class (PRO-6096)
+
+Per review on #11: BackgroundServiceStartNotAllowedException extends
+ServiceStartNotAllowedException extends IllegalStateException (API 1), so
+catching the base class collapses the SDK_INT branch, the @RequiresApi helper
+and both new imports into one plain try/catch -- and additionally covers
+API 26-30, where the same background-start restriction throws a bare
+IllegalStateException and was still uncaught (minSdk is 24). Same for the
+startForegroundService() retry.
+
+Also trimmed the javadoc's device/repro narrative, which duplicated the PR
+description and PRO-6096; kept the ACTION_ACCEPT_CALL-vs-other-actions
+rationale, which is the part that explains the code.
+
+* fix(android): gate the foreground retry on actual promotion (PRO-6096)
+
+The ACTION_ACCEPT_CALL retry via startForegroundService() assumed
+VoiceService.acceptCall() always promotes itself, but it does not:
+createOrReplaceForegroundNotification() no-ops with only a log line when
+POST_NOTIFICATIONS is denied, and acceptCall() falls through and accepts the
+call anyway, so startForeground() never runs. Denying notification permission
+is a normal, reachable state -- VoiceActivityProxy's own permissionList already
+treats POST_NOTIFICATIONS as a requestable runtime permission on API 33+.
+
+In that state the retry traded this crash for
+ForegroundServiceDidNotStartInTimeException, which the system throws
+asynchronously once the promotion window expires, so the try/catch at the start
+site could not intercept it -- exactly the failure mode the doc comment cites
+as the reason not to retry the other actions.
+
+Fix at the root rather than at the call site: VoiceService now exposes
+canPromoteToForeground(), the single definition of whether a foreground start
+will actually be honored, and gates its own promotion on it. VoiceActivityProxy
+consults it before retrying and falls back to log-and-drop when promotion is
+not possible -- same treatment as the other forwarded actions. One predicate,
+two call sites, so the two cannot drift apart.
+
+---------
+
+Co-authored-by: Jeff Hutchins <jeff@currentclient.com>
+---
+ .../VoiceActivityProxy.java                   | 40 ++++++++++++++++++-
+ .../twiliovoicereactnative/VoiceService.java  | 18 ++++++++-
+ 2 files changed, 55 insertions(+), 3 deletions(-)
+
+diff --git a/android/src/main/java/com/twiliovoicereactnative/VoiceActivityProxy.java b/android/src/main/java/com/twiliovoicereactnative/VoiceActivityProxy.java
+index 004fbeb..8ed52cc 100644
+--- a/android/src/main/java/com/twiliovoicereactnative/VoiceActivityProxy.java
++++ b/android/src/main/java/com/twiliovoicereactnative/VoiceActivityProxy.java
+@@ -109,7 +109,45 @@ public class VoiceActivityProxy {
+     Intent copiedIntent = new Intent(intent);
+     copiedIntent.setClass(context.getApplicationContext(), VoiceService.class);
+     copiedIntent.setFlags(0);
+-    context.getApplicationContext().startService(copiedIntent);
++    startVoiceService(copiedIntent, action);
++  }
++
++  /**
++   * Forwards a call intent to VoiceService, tolerating the OS refusing the start.
++   *
++   * Android's background-start restriction surfaces as a bare IllegalStateException on
++   * API 26-30 and as BackgroundServiceStartNotAllowedException (an IllegalStateException
++   * subclass) on API 31+, so catching the base class covers every SDK this module supports
++   * (minSdk 24) without an SDK_INT branch.
++   *
++   * Only ACTION_ACCEPT_CALL is retried as a foreground start, and only when VoiceService
++   * reports it can actually promote itself — a foreground start whose startForeground() never
++   * lands dies asynchronously with ForegroundServiceDidNotStartInTimeException, which no
++   * try/catch here can intercept. Every other case logs and drops: the remaining forwarded
++   * actions only post a plain notification and never promote at all.
++   */
++  private void startVoiceService(Intent intent, String action) {
++    try {
++      context.getApplicationContext().startService(intent);
++    } catch (IllegalStateException e) {
++      if (!Constants.ACTION_ACCEPT_CALL.equals(action)) {
++        logger.warning(e, "startService() rejected for action=" + action + ", dropping");
++        return;
++      }
++      if (!VoiceService.canPromoteToForeground(context)) {
++        logger.warning(e, "startService() rejected for ACTION_ACCEPT_CALL and VoiceService " +
++          "cannot promote itself to foreground (POST_NOTIFICATIONS denied), dropping rather " +
++          "than risking ForegroundServiceDidNotStartInTimeException");
++        return;
++      }
++      logger.warning(e, "startService() rejected, retrying ACTION_ACCEPT_CALL as a " +
++        "foreground service start");
++      try {
++        ContextCompat.startForegroundService(context.getApplicationContext(), intent);
++      } catch (IllegalStateException fe) {
++        logger.warning(fe, "startForegroundService() retry also rejected, dropping");
++      }
++    }
+   }
+ 
+   static {
+diff --git a/android/src/main/java/com/twiliovoicereactnative/VoiceService.java b/android/src/main/java/com/twiliovoicereactnative/VoiceService.java
+index 36529f9..8e48f2d 100644
+--- a/android/src/main/java/com/twiliovoicereactnative/VoiceService.java
++++ b/android/src/main/java/com/twiliovoicereactnative/VoiceService.java
+@@ -364,10 +364,24 @@ public class VoiceService extends Service {
+       (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+     mNotificationManager.notify(notificationId, notification);
+   }
++  /**
++   * Whether starting this service as a foreground service will actually result in a
++   * startForeground() call. The promotion happens via createOrReplaceForegroundNotification(),
++   * which posts nothing when POST_NOTIFICATIONS is denied — so the promotion is conditional,
++   * not guaranteed.
++   *
++   * Anything that starts this service with Context.startForegroundService() must consult this
++   * first. Starting a foreground service that never calls startForeground() is fatal
++   * (ForegroundServiceDidNotStartInTimeException), and the system throws that asynchronously
++   * once the promotion window expires — the start site cannot catch it.
++   */
++  static boolean canPromoteToForeground(@NonNull Context context) {
++    return ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
++      == PackageManager.PERMISSION_GRANTED;
++  }
+   private void createOrReplaceForegroundNotification(final int notificationId,
+                                                      final Notification notification) {
+-    if (ActivityCompat.checkSelfPermission(VoiceService.this, Manifest.permission.POST_NOTIFICATIONS)
+-      == PackageManager.PERMISSION_GRANTED) {
++    if (canPromoteToForeground(VoiceService.this)) {
+       foregroundNotification(notificationId, notification);
+     } else {
+       logger.warning("WARNING: Notification not posted, permission not granted");

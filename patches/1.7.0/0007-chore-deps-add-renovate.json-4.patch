@@ -1,0 +1,21 @@
+From f2d17ec0469e9d2e7a8271614181de3078403575 Mon Sep 17 00:00:00 2001
+From: "currentclient-renovate[bot]"
+ <292522836+currentclient-renovate[bot]@users.noreply.github.com>
+Date: Thu, 30 Jul 2026 11:49:46 -0600
+Subject: [PATCH 07/12] chore(deps): add renovate.json (#4)
+
+Co-authored-by: currentclient-renovate[bot] <292522836+currentclient-renovate[bot]@users.noreply.github.com>
+---
+ renovate.json | 3 +++
+ 1 file changed, 3 insertions(+)
+ create mode 100644 renovate.json
+
+diff --git a/renovate.json b/renovate.json
+new file mode 100644
+index 0000000..7190a60
+--- /dev/null
++++ b/renovate.json
+@@ -0,0 +1,3 @@
++{
++  "$schema": "https://docs.renovatebot.com/renovate-schema.json"
++}
