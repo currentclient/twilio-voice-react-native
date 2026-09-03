@@ -35,6 +35,24 @@ if [ -z "$SERIES_DIR" ] || [ ! -d "$SERIES_DIR" ]; then
   exit 1
 fi
 
+shopt -s nullglob
+PATCHES=("${SERIES_DIR}"/*.patch)
+if [ ${#PATCHES[@]} -eq 0 ]; then
+  echo "error: no .patch files found in ${SERIES_DIR}" >&2
+  exit 1
+fi
+
+# Stage the patches outside the working tree BEFORE checking out the
+# target tag. patches/ only exists on the fork's own branches — an
+# upstream tag's tree never had it — so `git checkout` onto the tag
+# below deletes it from disk along with everything else that isn't in
+# that tree. Applying from these staged copies keeps the series available
+# regardless of what the checkout does to the working tree.
+STAGING_DIR=$(mktemp -d)
+trap 'rm -rf "$STAGING_DIR"' EXIT
+cp "${PATCHES[@]}" "$STAGING_DIR"/
+STAGED_PATCHES=("$STAGING_DIR"/*.patch)
+
 if ! git remote get-url upstream >/dev/null 2>&1; then
   echo "adding upstream remote (twilio/twilio-voice-react-native)"
   git remote add upstream https://github.com/twilio/twilio-voice-react-native.git
@@ -52,19 +70,12 @@ fi
 echo "creating ${BRANCH} from tag ${NEW_TAG}"
 git checkout -b "${BRANCH}" "tags/${NEW_TAG}"
 
-shopt -s nullglob
-PATCHES=("${SERIES_DIR}"/*.patch)
-if [ ${#PATCHES[@]} -eq 0 ]; then
-  echo "error: no .patch files found in ${SERIES_DIR}" >&2
-  exit 1
-fi
-
-echo "applying ${#PATCHES[@]} patches from ${SERIES_DIR}"
-git am --3way "${PATCHES[@]}"
+echo "applying ${#STAGED_PATCHES[@]} patches from ${SERIES_DIR}"
+git am --3way "${STAGED_PATCHES[@]}"
 
 cat <<EOF
 
-Applied ${#PATCHES[@]} patch(es) from ${SERIES_DIR} onto ${NEW_TAG} on branch ${BRANCH}.
+Applied ${#STAGED_PATCHES[@]} patch(es) from ${SERIES_DIR} onto ${NEW_TAG} on branch ${BRANCH}.
 
 Remaining steps (see README.md "Keeping this fork current"):
   1. Build + run the native conformance/lint checks for this repo, then

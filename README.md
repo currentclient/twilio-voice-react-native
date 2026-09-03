@@ -36,7 +36,10 @@
 >   **stable** tag, and files a GitHub issue labeled `upstream-drift` when
 >   we're `driftThresholdStableReleases` or more behind. It never opens a
 >   duplicate while one is still open. Triage that issue into a PRO ticket
->   if action is warranted.
+>   if action is warranted. This repo currently has **Issues disabled**, so
+>   in practice it falls back to intentionally failing the scheduled run
+>   (with the drift details in the job log / step summary) as the signal —
+>   re-enable Issues to get the filed-issue behavior instead.
 > - *Patch series.* All 13 CC commits carried on top of `1.7.0` live as an
 >   ordered, re-appliable patch series in `patches/1.7.0/` (see
 >   `patches/1.7.0/SERIES.md` for what each one does and why). Applying the
