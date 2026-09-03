@@ -99,7 +99,10 @@ function ensureHeaderSearchPath(project, file) {
       continue;
     }
     const buildSettings = section[key].buildSettings;
-    if (!buildSettings || unquote(buildSettings.PRODUCT_NAME) !== project.productName) {
+    if (
+      !buildSettings ||
+      unquote(buildSettings.PRODUCT_NAME) !== project.productName
+    ) {
       continue;
     }
     if (!buildSettings.HEADER_SEARCH_PATHS) {
@@ -119,7 +122,9 @@ const withVoiceHeaderSearchPath = (config) =>
 
 const withVoiceAndroidManifest = (config, androidProps = {}) =>
   withAndroidManifest(config, (mod) => {
-    const app = AndroidConfig.Manifest.getMainApplicationOrThrow(mod.modResults);
+    const app = AndroidConfig.Manifest.getMainApplicationOrThrow(
+      mod.modResults
+    );
 
     if (!Array.isArray(app.service)) {
       app.service = [];
@@ -127,7 +132,8 @@ const withVoiceAndroidManifest = (config, androidProps = {}) =>
 
     const ensureService = (service) => {
       const exists = app.service.some(
-        (existing) => existing.$ && existing.$['android:name'] === service.$['android:name']
+        (existing) =>
+          existing.$ && existing.$['android:name'] === service.$['android:name']
       );
       if (!exists) {
         app.service.push(service);
@@ -136,14 +142,16 @@ const withVoiceAndroidManifest = (config, androidProps = {}) =>
 
     if (androidProps.messagingServiceClass) {
       ensureService({
-        $: {
+        '$': {
           'android:name': androidProps.messagingServiceClass,
           'android:stopWithTask': 'false',
           'android:exported': 'true',
         },
         'intent-filter': [
           {
-            action: [{ $: { 'android:name': 'com.google.firebase.MESSAGING_EVENT' } }],
+            action: [
+              { $: { 'android:name': 'com.google.firebase.MESSAGING_EVENT' } },
+            ],
           },
         ],
       });
@@ -181,9 +189,16 @@ const withVoiceAndroidManifest = (config, androidProps = {}) =>
 const withTwilioVoiceReactNative = (config, props = {}) => {
   config = withVoiceInfoPlist(config);
   config = withVoiceHeaderSearchPath(config);
-  config = AndroidConfig.Permissions.withPermissions(config, ANDROID_PERMISSIONS);
+  config = AndroidConfig.Permissions.withPermissions(
+    config,
+    ANDROID_PERMISSIONS
+  );
   config = withVoiceAndroidManifest(config, props.android);
   return config;
 };
 
-module.exports = createRunOncePlugin(withTwilioVoiceReactNative, pkg.name, pkg.version);
+module.exports = createRunOncePlugin(
+  withTwilioVoiceReactNative,
+  pkg.name,
+  pkg.version
+);

@@ -652,17 +652,21 @@ function parseCallQualityAndroid(
 
 /**
  * Parse call quality for iOS platform.
+ *
+ * As of TwilioVoice 6.13.4, `TVOPreflightReport.dictionaryReport()` reports
+ * `callQuality` as a string literal ("Excellent", "Great", "Good", "Fair",
+ * "Degraded") instead of the pre-6.13.4 numeric enum value (PRO-7303).
  */
 function parseCallQualityIos(
-  nativeCallQuality: number | undefined | null
+  nativeCallQuality: string | undefined | null
 ): PreflightTest.CallQuality | null {
   if (typeof nativeCallQuality === 'undefined' || nativeCallQuality === null) {
     return null;
   }
 
-  if (typeof nativeCallQuality !== 'number') {
+  if (typeof nativeCallQuality !== 'string') {
     throw new InvalidStateError(
-      `Call quality not of type "number". Found "${typeof nativeCallQuality}".`
+      `Call quality not of type "string". Found "${typeof nativeCallQuality}".`
     );
   }
 
@@ -670,7 +674,8 @@ function parseCallQualityIos(
 
   if (typeof parsedCallQuality !== 'string') {
     throw new InvalidStateError(
-      `Call quality invalid. Expected [0, 4], found "${nativeCallQuality}".`
+      `Call quality invalid. Expected one of "Excellent", "Great", "Good", ` +
+        `"Fair", "Degraded", found "${nativeCallQuality}".`
     );
   }
 
@@ -774,30 +779,25 @@ function parseIsTurnRequiredAndroid(
 
 /**
  * Parse native "isTurnRequired" value on iOS.
+ *
+ * As of TwilioVoice 6.13.4, `TVOPreflightReport.dictionaryReport()` reports
+ * `isTurnRequired` as a real boolean instead of the pre-6.13.4 string
+ * representation ("true"/"false") (PRO-7303).
  */
 function parseIsTurnRequiredIos(
-  isTurnRequired: string | undefined | null
+  isTurnRequired: boolean | undefined | null
 ): boolean | null {
   if (typeof isTurnRequired === 'undefined' || isTurnRequired === null) {
     return null;
   }
 
-  if (typeof isTurnRequired !== 'string') {
-    throw new InvalidStateError(
-      'PreflightTest "isTurnRequired" not of type "string". ' +
-        `Found "${isTurnRequired}".`
-    );
-  }
-
-  const parsedValue = isTurnRequiredMap.ios.get(isTurnRequired);
-
-  if (typeof parsedValue !== 'boolean') {
+  if (typeof isTurnRequired !== 'boolean') {
     throw new InvalidStateError(
       `PreflightTest "isTurnRequired" not valid. Found "${isTurnRequired}".`
     );
   }
 
-  return parsedValue;
+  return isTurnRequired;
 }
 
 /**
@@ -1456,12 +1456,14 @@ export namespace PreflightTest {
  * Map of call quality values from the native layer to the expected JS values.
  */
 const callQualityMap = {
-  ios: new Map<number, PreflightTest.CallQuality>([
-    [0, PreflightTest.CallQuality.Excellent],
-    [1, PreflightTest.CallQuality.Great],
-    [2, PreflightTest.CallQuality.Good],
-    [3, PreflightTest.CallQuality.Fair],
-    [4, PreflightTest.CallQuality.Degraded],
+  // As of TwilioVoice 6.13.4, iOS reports the same string literals as
+  // Android instead of the pre-6.13.4 numeric enum value (PRO-7303).
+  ios: new Map<string, PreflightTest.CallQuality>([
+    ['Excellent', PreflightTest.CallQuality.Excellent],
+    ['Great', PreflightTest.CallQuality.Great],
+    ['Good', PreflightTest.CallQuality.Good],
+    ['Fair', PreflightTest.CallQuality.Fair],
+    ['Degraded', PreflightTest.CallQuality.Degraded],
   ]),
   android: new Map<string, PreflightTest.CallQuality>([
     ['Excellent', PreflightTest.CallQuality.Excellent],
@@ -1469,16 +1471,6 @@ const callQualityMap = {
     ['Good', PreflightTest.CallQuality.Good],
     ['Fair', PreflightTest.CallQuality.Fair],
     ['Degraded', PreflightTest.CallQuality.Degraded],
-  ]),
-};
-
-/**
- * Map of isTurnRequired values from the native layer to the expected JS values.
- */
-const isTurnRequiredMap = {
-  ios: new Map<string, boolean>([
-    ['true', true],
-    ['false', false],
   ]),
 };
 
