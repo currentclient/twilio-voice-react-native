@@ -1,0 +1,390 @@
+From 5b017a782974568c4bdc304828bb1316365de1d8 Mon Sep 17 00:00:00 2001
+From: Jeff Hutchins <jeff@currentclient.com>
+Date: Wed, 10 Jun 2026 10:32:14 -0600
+Subject: [PATCH 02/12] fix(ios): early CallKit reporting via shared CXProvider
+ and cold-start race fixes
+
+Absorbs the iOS half of cc-mob-app's
+patches/@twilio+voice-react-native-sdk+1.7.0.patch as first-class code:
+
+- TwilioVoicePushRegistry creates a shared CXProvider in +initialize so
+  incoming VoIP pushes are reported to CallKit immediately, before the RN
+  module loads; the RN module reuses this provider and updates its
+  configuration instead of creating its own.
+- Handle VoIP pushes directly in native code: the push registry now
+  implements TVONotificationDelegate, calls TwilioVoiceSDK
+  handleNotification itself, and defers the PushKit completion handler
+  until after reportNewIncomingCall (PRO-4038) to avoid
+  _terminateAppIfThereAreUnhandledVoIPPushes.
+- Cold-start race fix: invites that arrive before the RN module registers
+  its NSNotificationCenter observer are stored statically and drained via
+  claimPendingCallInvite when the module initializes (callInviteMap).
+- Pass TVOCallInvite/TVOCancelledCallInvite objects through the
+  notification instead of re-running handleNotification in the RN module;
+  apply the incomingCallContactHandleTemplate to the CallKit handle.
+- Configure a fallback TVODefaultAudioDevice when the RN module's audio
+  device is not ready after a long background suspension.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+---
+ ios/TwilioVoicePushRegistry.h        |  22 ++++
+ ios/TwilioVoicePushRegistry.m        | 156 ++++++++++++++++++++++++++-
+ ios/TwilioVoiceReactNative+CallKit.m |   9 +-
+ ios/TwilioVoiceReactNative.m         |  74 ++++++++++++-
+ 4 files changed, 253 insertions(+), 8 deletions(-)
+
+diff --git a/ios/TwilioVoicePushRegistry.h b/ios/TwilioVoicePushRegistry.h
+index d40978c..091dcf4 100644
+--- a/ios/TwilioVoicePushRegistry.h
++++ b/ios/TwilioVoicePushRegistry.h
+@@ -5,15 +5,37 @@
+ //  Copyright © 2022 Twilio, Inc. All rights reserved.
+ //
+ 
++@import CallKit;
++
++@class TVOCallInvite;
++@class TVOCancelledCallInvite;
++
+ FOUNDATION_EXPORT NSString * const kTwilioVoicePushRegistryNotification;
+ FOUNDATION_EXPORT NSString * const kTwilioVoicePushRegistryEventType;
+ FOUNDATION_EXPORT NSString * const kTwilioVoicePushRegistryNotificationDeviceTokenUpdated;
+ FOUNDATION_EXPORT NSString * const kTwilioVoicePushRegistryNotificationDeviceToken;
+ FOUNDATION_EXPORT NSString * const kTwilioVoicePushRegistryNotificationIncomingPushReceived;
+ FOUNDATION_EXPORT NSString * const kTwilioVoicePushRegistryNotificationIncomingPushPayload;
++FOUNDATION_EXPORT NSString * const kTwilioVoicePushRegistryNotificationCallInvite;
++FOUNDATION_EXPORT NSString * const kTwilioVoicePushRegistryNotificationCancelledCallInviteReceived;
++FOUNDATION_EXPORT NSString * const kTwilioVoicePushRegistryNotificationCancelledCallInvite;
++FOUNDATION_EXPORT NSString * const kTwilioVoicePushRegistryNotificationCancelledCallInviteError;
+ 
+ @interface TwilioVoicePushRegistry : NSObject
+ 
+ - (void)updatePushRegistry;
+ 
++/// Shared CXProvider used for all CallKit interactions.
++/// Created early in +initialize so it is available before the RN module loads.
+++ (CXProvider *)sharedCallKitProvider;
++
++/// Update the shared provider's configuration (called by the RN module when
++/// the JS side sets CallKit configuration).
+++ (void)setSharedCallKitProviderConfiguration:(CXProviderConfiguration *)configuration;
++
++/// Claim a call invite that arrived before the RN module registered as an
++/// NSNotificationCenter observer (cold-start race). Returns the invite and
++/// clears the static slot atomically. Returns nil if none is pending.
+++ (TVOCallInvite *)claimPendingCallInvite;
++
+ @end
+diff --git a/ios/TwilioVoicePushRegistry.m b/ios/TwilioVoicePushRegistry.m
+index c5d95dd..b59ba3a 100644
+--- a/ios/TwilioVoicePushRegistry.m
++++ b/ios/TwilioVoicePushRegistry.m
+@@ -7,6 +7,7 @@
+ 
+ @import PushKit;
+ @import Foundation;
++@import CallKit;
+ @import TwilioVoice;
+ 
+ #import "TwilioVoicePushRegistry.h"
+@@ -19,8 +20,21 @@ NSString * const kTwilioVoicePushRegistryNotificationDeviceTokenUpdated = @"devi
+ NSString * const kTwilioVoicePushRegistryNotificationDeviceToken = @"deviceToken";
+ NSString * const kTwilioVoicePushRegistryNotificationIncomingPushReceived = @"incomingPushReceived";
+ NSString * const kTwilioVoicePushRegistryNotificationIncomingPushPayload = @"incomingPushPayload";
++NSString * const kTwilioVoicePushRegistryNotificationCallInvite = @"callInvite";
++NSString * const kTwilioVoicePushRegistryNotificationCancelledCallInviteReceived = @"cancelledCallInviteReceived";
++NSString * const kTwilioVoicePushRegistryNotificationCancelledCallInvite = @"cancelledCallInvite";
++NSString * const kTwilioVoicePushRegistryNotificationCancelledCallInviteError = @"cancelledCallInviteError";
+ 
+-@interface TwilioVoicePushRegistry () <PKPushRegistryDelegate>
++static CXProvider *sSharedCallKitProvider;
++static TVODefaultAudioDevice *sPushRegistryAudioDevice;
++static TVOCallInvite *sPendingCallInvite;
++// Holds the PushKit completion block until reportNewIncomingCall is called.
++// Twilio's handleNotification: makes a network round-trip so callInviteReceived:
++// fires asynchronously — calling completion() before it would trigger
++// _terminateAppIfThereAreUnhandledVoIPPushes (PRO-4038).
++static dispatch_block_t sPendingVoIPCompletion;
++
++@interface TwilioVoicePushRegistry () <PKPushRegistryDelegate, TVONotificationDelegate>
+ 
+ @property (nonatomic, strong) PKPushRegistry *voipRegistry;
+ @property (nonatomic, copy) NSString *callInviteUuid;
+@@ -29,6 +43,28 @@ NSString * const kTwilioVoicePushRegistryNotificationIncomingPushPayload = @"inc
+ 
+ @implementation TwilioVoicePushRegistry
+ 
+++ (void)initialize {
++    if (self == [TwilioVoicePushRegistry class]) {
++        CXProviderConfiguration *config = [CXProviderConfiguration new];
++        config.maximumCallGroups = 1;
++        config.maximumCallsPerCallGroup = 1;
++        config.supportedHandleTypes = [NSSet setWithArray:@[@(CXHandleTypeGeneric), @(CXHandleTypePhoneNumber)]];
++        sSharedCallKitProvider = [[CXProvider alloc] initWithConfiguration:config];
++        NSLog(@"[TwilioVoicePushRegistry] Shared CallKit provider initialized");
++    }
++}
++
+++ (CXProvider *)sharedCallKitProvider {
++    return sSharedCallKitProvider;
++}
++
+++ (void)setSharedCallKitProviderConfiguration:(CXProviderConfiguration *)configuration {
++    if (configuration) {
++        sSharedCallKitProvider.configuration = configuration;
++        NSLog(@"[TwilioVoicePushRegistry] Shared CallKit provider configuration updated");
++    }
++}
++
+ #pragma mark - TwilioVoicePushRegistry methods
+ 
+ - (void)updatePushRegistry {
+@@ -55,10 +91,32 @@ didReceiveIncomingPushWithPayload:(PKPushPayload *)payload
+              forType:(PKPushType)type
+ withCompletionHandler:(void (^)(void))completion {
+     if ([type isEqualToString:PKPushTypeVoIP]) {
+-        [[NSNotificationCenter defaultCenter] postNotificationName:kTwilioVoicePushRegistryNotification
+-                                                            object:nil
+-                                                          userInfo:@{kTwilioVoicePushRegistryEventType: kTwilioVoicePushRegistryNotificationIncomingPushReceived,
+-                                                                     kTwilioVoicePushRegistryNotificationIncomingPushPayload: payload.dictionaryPayload}];
++        NSLog(@"[TwilioVoicePushRegistry] VoIP push received — handling notification directly in native code");
++
++        // Apple requires reportNewIncomingCall to be called BEFORE the completion
++        // handler is invoked (PushKit checks inside completion() and calls
++        // _terminateAppIfThereAreUnhandledVoIPPushes if it was not called).
++        // Twilio's handleNotification: makes a network round-trip, so
++        // callInviteReceived: fires asynchronously.  Store the block here and
++        // call it from callInviteReceived: after reportNewIncomingCall (PRO-4038).
++        sPendingVoIPCompletion = completion;
++
++        // Ensure the Twilio audio device is configured.
++        // The RN module normally does this, but it may not be initialized yet
++        // after a long background suspension.
++        if (![TwilioVoiceReactNative twilioAudioDevice]) {
++            NSLog(@"[TwilioVoicePushRegistry] RN module audio device not ready — configuring fallback audio device");
++            sPushRegistryAudioDevice = [TVODefaultAudioDevice audioDevice];
++            TwilioVoiceSDK.audioDevice = sPushRegistryAudioDevice;
++        }
++
++        // Handle the notification DIRECTLY in native code.
++        // callInviteReceived: will call reportNewIncomingCall then sPendingVoIPCompletion.
++        [TwilioVoiceSDK handleNotification:payload.dictionaryPayload
++                                  delegate:self
++                             delegateQueue:nil
++                       callMessageDelegate:nil];
++        return;
+     }
+ 
+     completion();
+@@ -69,4 +127,92 @@ withCompletionHandler:(void (^)(void))completion {
+     // TODO: notify view-controller to emit event that the push-registry has been invalidated
+ }
+ 
++#pragma mark - TVONotificationDelegate
++
++- (void)callInviteReceived:(TVOCallInvite *)callInvite {
++    NSLog(@"[TwilioVoicePushRegistry] callInviteReceived — reporting to CallKit immediately (uuid: %@)", callInvite.uuid.UUIDString);
++
++    // Store the invite statically so the RN module can claim it even if it was not
++    // yet registered as an NSNotificationCenter observer (cold-start race condition).
++    sPendingCallInvite = callInvite;
++
++    // Build caller display name from the invite, applying the same custom
++    // handle template the RN module would use (stored in NSUserDefaults).
++    NSString *handleName = callInvite.from ?: @"Unknown Caller";
++
++    NSUserDefaults *preferences = [NSUserDefaults standardUserDefaults];
++    NSString *preferenceKey = @"incomingCallContactHandleTemplate";
++    NSString *preferenceVal = [preferences stringForKey:preferenceKey];
++    if (preferenceVal.length > 0) {
++        NSString *processedTemplate = [preferenceVal copy];
++        for (NSString *paramKey in [callInvite customParameters]) {
++            NSString *paramValue = [callInvite customParameters][paramKey];
++            NSString *wrappedParamKey = [NSString stringWithFormat:@"${%@}", paramKey];
++            processedTemplate = [processedTemplate stringByReplacingOccurrencesOfString:wrappedParamKey
++                                                                            withString:paramValue];
++        }
++        handleName = processedTemplate;
++    }
++
++    CXHandle *callHandle = [[CXHandle alloc] initWithType:CXHandleTypeGeneric value:handleName];
++
++    CXCallUpdate *callUpdate = [[CXCallUpdate alloc] init];
++    callUpdate.remoteHandle = callHandle;
++    callUpdate.localizedCallerName = handleName;
++    callUpdate.supportsDTMF = YES;
++    callUpdate.supportsHolding = YES;
++    callUpdate.supportsGrouping = NO;
++    callUpdate.supportsUngrouping = NO;
++    callUpdate.hasVideo = NO;
++
++    [sSharedCallKitProvider reportNewIncomingCallWithUUID:callInvite.uuid
++                                                  update:callUpdate
++                                              completion:^(NSError *error) {
++        if (!error) {
++            NSLog(@"[TwilioVoicePushRegistry] Incoming call successfully reported to CallKit.");
++        } else {
++            NSLog(@"[TwilioVoicePushRegistry] Failed to report incoming call to CallKit: %@.", error);
++        }
++    }];
++
++    // reportNewIncomingCall has been called — now safe to call the deferred
++    // PushKit completion block (PRO-4038).
++    dispatch_block_t pendingCompletion = sPendingVoIPCompletion;
++    sPendingVoIPCompletion = nil;
++    if (pendingCompletion) {
++        pendingCompletion();
++    }
++
++    // Notify the RN module so it can store the invite and emit a JS event
++    // when it is ready.  We pass the TVOCallInvite object directly so the
++    // RN module does NOT need to call handleNotification a second time.
++    [[NSNotificationCenter defaultCenter] postNotificationName:kTwilioVoicePushRegistryNotification
++                                                        object:nil
++                                                      userInfo:@{kTwilioVoicePushRegistryEventType: kTwilioVoicePushRegistryNotificationIncomingPushReceived,
++                                                                 kTwilioVoicePushRegistryNotificationCallInvite: callInvite}];
++}
++
+++ (TVOCallInvite *)claimPendingCallInvite {
++    TVOCallInvite *invite = sPendingCallInvite;
++    sPendingCallInvite = nil;
++    return invite;
++}
++
++- (void)cancelledCallInviteReceived:(TVOCancelledCallInvite *)cancelledCallInvite error:(NSError *)error {
++    NSLog(@"[TwilioVoicePushRegistry] cancelledCallInviteReceived (callSid: %@)", cancelledCallInvite.callSid);
++
++    // Notify the RN module so it can match the cancelled invite, clean up, and
++    // emit the JS event.
++    NSMutableDictionary *userInfo = [@{
++        kTwilioVoicePushRegistryEventType: kTwilioVoicePushRegistryNotificationCancelledCallInviteReceived,
++        kTwilioVoicePushRegistryNotificationCancelledCallInvite: cancelledCallInvite
++    } mutableCopy];
++    if (error) {
++        userInfo[kTwilioVoicePushRegistryNotificationCancelledCallInviteError] = error;
++    }
++    [[NSNotificationCenter defaultCenter] postNotificationName:kTwilioVoicePushRegistryNotification
++                                                        object:nil
++                                                      userInfo:userInfo];
++}
++
+ @end
+diff --git a/ios/TwilioVoiceReactNative+CallKit.m b/ios/TwilioVoiceReactNative+CallKit.m
+index adcd790..157fd88 100644
+--- a/ios/TwilioVoiceReactNative+CallKit.m
++++ b/ios/TwilioVoiceReactNative+CallKit.m
+@@ -10,6 +10,7 @@
+ 
+ #import "TwilioVoiceReactNative.h"
+ #import "TwilioVoiceReactNativeConstants.h"
++#import "TwilioVoicePushRegistry.h"
+ 
+ NSString * const kDefaultCallKitConfigurationName = @"Twilio Voice React Native";
+ 
+@@ -61,7 +62,13 @@ NSString * const kDefaultCallKitConfigurationName = @"Twilio Voice React Native"
+         callKitConfiguration.ringtoneSound = configuration[kTwilioVoiceReactNativeCallKitRingtoneSound];
+     }
+     
+-    self.callKitProvider = [[CXProvider alloc] initWithConfiguration:callKitConfiguration];
++    // Use the shared CXProvider from TwilioVoicePushRegistry.
++    // This provider was created very early (in +initialize) so that
++    // incoming VoIP pushes can report to CallKit immediately, even
++    // before the RN module is initialized.  We update its configuration
++    // and set ourselves as delegate so we receive all CallKit actions.
++    [TwilioVoicePushRegistry setSharedCallKitProviderConfiguration:callKitConfiguration];
++    self.callKitProvider = [TwilioVoicePushRegistry sharedCallKitProvider];
+     [self.callKitProvider setDelegate:self queue:nil];
+     self.callKitCallController = [CXCallController new];
+ }
+diff --git a/ios/TwilioVoiceReactNative.m b/ios/TwilioVoiceReactNative.m
+index 9832b50..3cbc1bc 100644
+--- a/ios/TwilioVoiceReactNative.m
++++ b/ios/TwilioVoiceReactNative.m
+@@ -114,6 +114,17 @@ static TVODefaultAudioDevice *sTwilioAudioDevice;
+                                                  name:kTwilioVoicePushRegistryNotification
+                                                object:nil];
+ 
++    // Drain any invite that arrived before this module registered as an observer.
++    // TwilioVoiceReactNative initializes on a background thread (requiresMainQueueSetup=NO)
++    // while VoIP pushes are delivered on the main thread — if the push fires first the
++    // NSNotification above is missed.  The JS bootstrap discovers it via getCallInvites()
++    // so no event emission is needed; storing in callInviteMap is sufficient.
++    TVOCallInvite *missedInvite = [TwilioVoicePushRegistry claimPendingCallInvite];
++    if (missedInvite && !self.callInviteMap[missedInvite.uuid.UUIDString]) {
++        NSLog(@"[TwilioVoiceReactNative] Claiming invite missed due to cold-start race (uuid: %@)", missedInvite.uuid.UUIDString);
++        self.callInviteMap[missedInvite.uuid.UUIDString] = missedInvite;
++    }
++
+     [[NSNotificationCenter defaultCenter] addObserver:self
+                                              selector:@selector(handleRouteChange:)
+                                                  name:AVAudioSessionRouteChangeNotification
+@@ -133,8 +144,67 @@ static TVODefaultAudioDevice *sTwilioAudioDevice;
+         // Skip the event emitting since 1, the listener has not registered and 2, the app does not need to know about this
+         return;
+     } else if ([type isEqualToString:kTwilioVoicePushRegistryNotificationIncomingPushReceived]) {
+-        NSDictionary *payload = eventBody[kTwilioVoicePushRegistryNotificationIncomingPushPayload];
+-        [TwilioVoiceSDK handleNotification:payload delegate:self delegateQueue:nil callMessageDelegate:self];
++        // The push registry has already called TwilioVoiceSDK.handleNotification
++        // and reported to CallKit.  If a TVOCallInvite was passed directly, use
++        // it instead of calling handleNotification a second time.
++        TVOCallInvite *callInvite = eventBody[kTwilioVoicePushRegistryNotificationCallInvite];
++        if (callInvite) {
++            NSLog(@"[TwilioVoiceReactNative] Received pre-handled call invite from push registry (uuid: %@)", callInvite.uuid.UUIDString);
++            self.callInviteMap[callInvite.uuid.UUIDString] = callInvite;
++
++            // Notification was received — clear the static slot so subscribeToNotifications
++            // does not process it a second time (prevents double-registration edge case).
++            [TwilioVoicePushRegistry claimPendingCallInvite];
++
++            // CallKit was already notified by the push registry — do NOT call
++            // reportNewIncomingCall again.  Just emit the JS event.
++            [self sendEventWithName:kTwilioVoiceReactNativeScopeVoice
++                               body:@{
++                                 kTwilioVoiceReactNativeVoiceEventType: kTwilioVoiceReactNativeVoiceEventTypeValueIncomingCallInvite,
++                                 kTwilioVoiceReactNativeEventKeyCallInvite: [self callInviteInfo:callInvite]}];
++        } else {
++            // Legacy / fallback path: payload provided without a pre-built invite.
++            NSDictionary *payload = eventBody[kTwilioVoicePushRegistryNotificationIncomingPushPayload];
++            if (payload) {
++                [TwilioVoiceSDK handleNotification:payload delegate:self delegateQueue:nil callMessageDelegate:self];
++            }
++        }
++    } else if ([type isEqualToString:kTwilioVoicePushRegistryNotificationCancelledCallInviteReceived]) {
++        TVOCancelledCallInvite *cancelledCallInvite = eventBody[kTwilioVoicePushRegistryNotificationCancelledCallInvite];
++        NSError *error = eventBody[kTwilioVoicePushRegistryNotificationCancelledCallInviteError];
++        if ([error isKindOfClass:[NSNull class]]) {
++            error = nil;
++        }
++        if (cancelledCallInvite) {
++            NSLog(@"[TwilioVoiceReactNative] Received pre-handled cancelled call invite from push registry (callSid: %@)", cancelledCallInvite.callSid);
++
++            NSString *uuid;
++            for (NSString *uuidKey in [self.callInviteMap allKeys]) {
++                TVOCallInvite *invite = self.callInviteMap[uuidKey];
++                if ([invite.callSid isEqualToString:cancelledCallInvite.callSid]) {
++                    uuid = uuidKey;
++                    break;
++                }
++            }
++
++            if (uuid) {
++                self.cancelledCallInviteMap[uuid] = cancelledCallInvite;
++
++                [self sendEventWithName:kTwilioVoiceReactNativeScopeCallInvite
++                                   body:@{
++                                     kTwilioVoiceReactNativeVoiceEventType: kTwilioVoiceReactNativeCallInviteEventTypeValueCancelled,
++                                     kTwilioVoiceReactNativeCallInviteEventKeyCallSid: cancelledCallInvite.callSid,
++                                     kTwilioVoiceReactNativeEventKeyCancelledCallInvite: [self cancelledCallInviteInfo:cancelledCallInvite],
++                                     kTwilioVoiceReactNativeVoiceErrorKeyError: @{
++                                       kTwilioVoiceReactNativeVoiceErrorKeyCode: @(error ? error.code : 0),
++                                       kTwilioVoiceReactNativeVoiceErrorKeyMessage: error ? [error localizedDescription] : @""}}];
++
++                [self.callInviteMap removeObjectForKey:uuid];
++                [self endCallWithUuid:[[NSUUID alloc] initWithUUIDString:uuid]];
++            } else {
++                NSLog(@"[TwilioVoiceReactNative] No matching call invite found for cancelled invite (callSid: %@)", cancelledCallInvite.callSid);
++            }
++        }
+     }
+ }
+ 

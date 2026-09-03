@@ -1,0 +1,40 @@
+name: Upstream drift check
+
+# Detects when twilio/twilio-voice-react-native has shipped stable
+# release(s) we haven't evaluated yet (PRO-7321). Opens (at most one open)
+# GitHub issue labeled `upstream-drift` for a human to triage.
+
+on:
+  schedule:
+    # Mondays 13:00 UTC.
+    - cron: '0 13 * * 1'
+  workflow_dispatch: {}
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  check-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Ensure upstream-drift label exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create upstream-drift \
+            --description "Fork base has fallen behind an upstream stable release" \
+            --color FBCA04 \
+            || true
+
+      - name: Check upstream drift
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/check-upstream-drift.mjs
