@@ -33,13 +33,17 @@
 > - *Drift detection.* `.github/workflows/upstream-drift-check.yml` runs
 >   weekly (and on demand via `workflow_dispatch`), compares
 >   `.upstream-tracking.json`'s `baseTag` against upstream's latest
->   **stable** tag, and files a GitHub issue labeled `upstream-drift` when
->   we're `driftThresholdStableReleases` or more behind. It never opens a
->   duplicate while one is still open. Triage that issue into a PRO ticket
->   if action is warranted. This repo currently has **Issues disabled**, so
->   in practice it falls back to intentionally failing the scheduled run
->   (with the drift details in the job log / step summary) as the signal —
->   re-enable Issues to get the filed-issue behavior instead.
+>   **stable** tag, and files a GitHub issue labeled `upstream-drift` on
+>   the `DRIFT_ISSUE_REPO` sink repo (an Actions repo variable, defaults to
+>   this repo) when we're `driftThresholdStableReleases` or more behind.
+>   It never opens a duplicate while one is still open. Triage that issue
+>   into a PRO ticket if action is warranted. This repo currently has
+>   **Issues disabled** and no `DRIFT_ISSUE_REPO` is set, so in practice it
+>   falls back to intentionally failing the scheduled run (with the drift
+>   details in the job log / step summary) as the signal — either
+>   re-enabling Issues here or pointing `DRIFT_ISSUE_REPO` at a repo that
+>   has them (plus a token with write access there, if it's not this repo)
+>   switches it back to filing real issues, no code change needed.
 > - *Patch series.* All 13 CC commits carried on top of `1.7.0` live as an
 >   ordered, re-appliable patch series in `patches/1.7.0/` (see
 >   `patches/1.7.0/SERIES.md` for what each one does and why). Applying the

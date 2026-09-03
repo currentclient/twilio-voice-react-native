@@ -1,8 +1,18 @@
 name: Upstream drift check
 
 # Detects when twilio/twilio-voice-react-native has shipped stable
-# release(s) we haven't evaluated yet (PRO-7321). Opens (at most one open)
-# GitHub issue labeled `upstream-drift` for a human to triage.
+# release(s) we haven't evaluated yet (PRO-7321). Preferred signal: opens
+# (at most one open) GitHub issue labeled `upstream-drift` on the
+# DRIFT_ISSUE_REPO sink for a human to triage. Fallback signal, used
+# whenever the sink can't take an issue (e.g. Issues disabled — true of
+# this repo today): the job itself fails, with the drift report in the
+# log and step summary.
+#
+# DRIFT_ISSUE_REPO (repo/org variable, Settings > Secrets and variables >
+# Actions > Variables) selects the sink repo, defaulting to this repo.
+# Pointing it at a different repo (e.g. once cc-mob-app is wired up) also
+# needs a token with write access there — GITHUB_TOKEN is scoped to this
+# repo only — so that's a config + secret change, not a code change.
 
 on:
   schedule:
@@ -29,6 +39,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh label create upstream-drift \
+            --repo "${{ vars.DRIFT_ISSUE_REPO || github.repository }}" \
             --description "Fork base has fallen behind an upstream stable release" \
             --color FBCA04 \
             || true
@@ -37,4 +48,5 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRIFT_ISSUE_REPO: ${{ vars.DRIFT_ISSUE_REPO }}
         run: node scripts/check-upstream-drift.mjs

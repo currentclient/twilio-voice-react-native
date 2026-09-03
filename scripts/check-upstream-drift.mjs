@@ -8,18 +8,27 @@
  * Run by .github/workflows/upstream-drift-check.yml on a weekly schedule
  * and on workflow_dispatch.
  *
+ * Sink repo: the `DRIFT_ISSUE_REPO` env var (wired from the
+ * `DRIFT_ISSUE_REPO` repo/org variable in the workflow) names the
+ * `owner/repo` to file the issue against, defaulting to this repo itself
+ * (`GITHUB_REPOSITORY`) when unset. Today that has to stay the fork
+ * itself — this fork-scoped `GITHUB_TOKEN` can't write issues to another
+ * repo (e.g. cc-mob-app) without a separate cross-repo secret, which
+ * isn't wired up. Pointing DRIFT_ISSUE_REPO elsewhere once such a secret
+ * exists is then a config change, not a code change.
+ *
  * Signal path:
  *   - Preferred: file (or leave alone, if one's already open) a GitHub
- *     issue labeled `upstream-drift`. Requires `gh` on PATH, authenticated
- *     (the workflow exports GH_TOKEN from GITHUB_TOKEN), AND this repo to
- *     have Issues enabled.
- *   - Fallback: if Issues are disabled here, or issue creation fails for
- *     any other reason (permissions, rate limit, etc.), this script never
- *     throws uncaught — it logs the drift report, writes it to
- *     $GITHUB_STEP_SUMMARY when running in Actions, and exits non-zero.
- *     A failing scheduled run is itself a working signal on a repo with
- *     no Issues: GitHub notifies watchers on scheduled-workflow failure
- *     without needing any extra permission.
+ *     issue labeled `upstream-drift` on the sink repo. Requires `gh` on
+ *     PATH, authenticated (the workflow exports GH_TOKEN from
+ *     GITHUB_TOKEN), AND the sink repo to have Issues enabled.
+ *   - Fallback: if Issues are disabled on the sink repo, or issue
+ *     creation fails for any other reason (permissions, rate limit,
+ *     etc.), this script never throws uncaught — it logs the drift
+ *     report, writes it to $GITHUB_STEP_SUMMARY when running in Actions,
+ *     and exits non-zero. A failing scheduled run is itself a working
+ *     signal on a repo with no Issues: GitHub notifies watchers on
+ *     scheduled-workflow failure without needing any extra permission.
  *
  * This does not open a Linear ticket directly — the fork repo has no
  * Linear credentials in CI. Whichever signal above fires is the trigger a
@@ -95,6 +104,13 @@ function currentRepoSlug() {
   }
 }
 
+/** owner/repo to file the drift issue against — configurable so pointing
+ * this at a real issue tracker later is a config change, not a code
+ * change. Defaults to this repo itself. */
+function driftIssueRepoSlug() {
+  return process.env.DRIFT_ISSUE_REPO || currentRepoSlug();
+}
+
 /**
  * true / false when we could determine it, null when we couldn't tell
  * (network error, no token, etc.) — null means "try the issue path and
@@ -114,16 +130,22 @@ async function issuesEnabled(repoSlug) {
   }
 }
 
-function hasOpenDriftIssue() {
+function hasOpenDriftIssue(repoSlug) {
   try {
     const out = execFileSync(
       'gh',
-      ['issue', 'list', '--state', 'open', '--label', DRIFT_LABEL, '--json', 'number'],
+      [
+        'issue', 'list',
+        '--repo', repoSlug,
+        '--state', 'open',
+        '--label', DRIFT_LABEL,
+        '--json', 'number',
+      ],
       { encoding: 'utf8', cwd: REPO_ROOT },
     );
     return JSON.parse(out).length > 0;
   } catch (err) {
-    console.error(`could not list existing issues (${err.message}); assuming none open`);
+    console.error(`could not list existing issues on ${repoSlug} (${err.message}); assuming none open`);
     return false;
   }
 }
@@ -150,7 +172,7 @@ function driftBody({ baseTag, latest, behindTags }) {
 }
 
 /** Returns true on success, false on any failure — never throws. */
-function tryOpenDriftIssue(info) {
+function tryOpenDriftIssue(info, repoSlug) {
   const title = driftTitle(info);
   const body = [
     driftBody(info),
@@ -161,12 +183,12 @@ function tryOpenDriftIssue(info) {
   try {
     execFileSync(
       'gh',
-      ['issue', 'create', '--title', title, '--body', body, '--label', DRIFT_LABEL],
+      ['issue', 'create', '--repo', repoSlug, '--title', title, '--body', body, '--label', DRIFT_LABEL],
       { stdio: 'inherit', cwd: REPO_ROOT },
     );
     return true;
   } catch (err) {
-    console.error(`could not file a GitHub issue (${err.message}).`);
+    console.error(`could not file a GitHub issue on ${repoSlug} (${err.message}).`);
     return false;
   }
 }
@@ -234,24 +256,32 @@ async function main() {
     return;
   }
 
-  const repoSlug = currentRepoSlug();
-  const canFileIssues = await issuesEnabled(repoSlug);
-
-  if (canFileIssues === false) {
+  const sinkRepo = driftIssueRepoSlug();
+  if (!sinkRepo) {
     reportDriftAsJobFailure(
       driftInfo,
-      `GitHub Issues are disabled on ${repoSlug} — failing this job intentionally as the drift signal.`,
+      'Could not determine a sink repo (DRIFT_ISSUE_REPO unset and GITHUB_REPOSITORY/origin unavailable) — failing this job as the drift signal instead.',
     );
     return;
   }
 
-  if (hasOpenDriftIssue()) {
-    console.log(`an open "${DRIFT_LABEL}" issue already exists; not filing a duplicate.`);
+  const canFileIssues = await issuesEnabled(sinkRepo);
+
+  if (canFileIssues === false) {
+    reportDriftAsJobFailure(
+      driftInfo,
+      `GitHub Issues are disabled on ${sinkRepo} — failing this job intentionally as the drift signal.`,
+    );
     return;
   }
 
-  if (tryOpenDriftIssue(driftInfo)) {
-    console.log('opened drift issue.');
+  if (hasOpenDriftIssue(sinkRepo)) {
+    console.log(`an open "${DRIFT_LABEL}" issue already exists on ${sinkRepo}; not filing a duplicate.`);
+    return;
+  }
+
+  if (tryOpenDriftIssue(driftInfo, sinkRepo)) {
+    console.log(`opened drift issue on ${sinkRepo}.`);
     return;
   }
 
