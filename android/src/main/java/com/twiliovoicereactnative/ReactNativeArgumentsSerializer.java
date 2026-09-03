@@ -176,11 +176,10 @@ class ReactNativeArgumentsSerializer {
    */
   public static WritableMap serializeAudioDevice(String uuid, @Nullable AudioDevice audioDevice) {
     if (null != audioDevice) {
-      String type = audioDevice.getClass().getSimpleName();
       return constructJSMap(
         new Pair<>(AudioDeviceKeyUuid, uuid),
         new Pair<>(AudioDeviceKeyName, audioDevice.getName()),
-        new Pair<>(AudioDeviceKeyType, AudioSwitchManager.AUDIO_DEVICE_TYPE.get(type)));
+        new Pair<>(AudioDeviceKeyType, AudioSwitchManager.getAudioDeviceType(audioDevice)));
     }
     return null;
   }

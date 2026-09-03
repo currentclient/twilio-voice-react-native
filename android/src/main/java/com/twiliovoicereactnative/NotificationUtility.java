@@ -151,11 +151,14 @@ class NotificationUtility {
       callRecord.getUuid());
     PendingIntent piForegroundIntent = constructPendingIntentForActivity(context, foregroundIntent);
 
+    // Carry the id so the service can still dismiss the notification after the call record is
+    // evicted (e.g. after process death); otherwise the accept/reject button lingers forever.
     Intent rejectIntent = constructMessage(
       context,
       Constants.ACTION_REJECT_CALL,
       VoiceService.class,
       callRecord.getUuid());
+    rejectIntent.putExtra(Constants.MSG_KEY_NOTIFICATION_ID, callRecord.getNotificationId());
     PendingIntent piRejectIntent = constructPendingIntentForService(context, rejectIntent);
 
     Intent acceptIntent = constructMessage(
@@ -163,6 +166,7 @@ class NotificationUtility {
       Constants.ACTION_ACCEPT_CALL,
       Objects.requireNonNull(VoiceApplicationProxy.getMainActivityClass()),
       callRecord.getUuid());
+    acceptIntent.putExtra(Constants.MSG_KEY_NOTIFICATION_ID, callRecord.getNotificationId());
     PendingIntent piAcceptIntent = constructPendingIntentForActivity(context, acceptIntent);
 
     return constructNotificationBuilder(context, channelImportance)
