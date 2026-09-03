@@ -119,6 +119,14 @@ public class VoiceService extends Service {
       CallRecordDatabase.CallRecord callRecord = getCallRecord(callId);
       if (callRecord == null) {
         logger.warning("No call record found for: " + callId);
+        // The call record backing this notification is gone (e.g. evicted after process death),
+        // so its accept/reject action would otherwise never resolve. Dismiss the notification
+        // itself using the id carried on the intent, rather than leaving a dead button behind
+        // (backport of upstream VBLOCKS-6682 / twilio/twilio-voice-react-native#699).
+        int notificationId = getMessageNotificationId(intent);
+        if (CallRecordDatabase.CallRecord.INVALID_NOTIFICATION_ID != notificationId) {
+          removeNotification(notificationId);
+        }
         return START_NOT_STICKY;
       }
       switch (Objects.requireNonNull(intent.getAction())) {
@@ -411,6 +419,11 @@ public class VoiceService extends Service {
   }
   private static UUID getMessageUUID(@NonNull final Intent intent) {
     return (UUID)intent.getSerializableExtra(Constants.MSG_KEY_UUID);
+  }
+  private static int getMessageNotificationId(@NonNull final Intent intent) {
+    return intent.getIntExtra(
+      Constants.MSG_KEY_NOTIFICATION_ID,
+      CallRecordDatabase.CallRecord.INVALID_NOTIFICATION_ID);
   }
   private static CallRecordDatabase.CallRecord getCallRecord(final UUID uuid) {
     return getCallRecordDatabase().get(new CallRecordDatabase.CallRecord(uuid));

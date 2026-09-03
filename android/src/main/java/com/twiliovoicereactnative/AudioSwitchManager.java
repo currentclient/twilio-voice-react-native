@@ -34,13 +34,26 @@ class AudioSwitchManager {
   }
 
   /**
-   * Audio device type mapping. Normalizes the class name into a string the JS layer expects.
+   * Maps an AudioDevice to the string the JS layer expects. Uses `instanceof` rather than the
+   * class name (e.g. via reflection) because code shrinkers such as R8 can rename AudioSwitch's
+   * classes in a consuming app's release build, and AudioSwitch does not ship a consumer
+   * ProGuard rule that prevents this -- the old class-name-map lookup silently returned null for
+   * every device in a minified release build once that happened (backport of upstream
+   * VBLOCKS-4141 / twilio/twilio-voice-react-native#700, R8-safety part only; this fork does not
+   * carry the accompanying AudioDevice.Type.Unknown API addition).
    */
-  public static final Map<String, String> AUDIO_DEVICE_TYPE = Map.of(
-    "Speakerphone", AudioDeviceKeySpeaker,
-    "BluetoothHeadset", AudioDeviceKeyBluetooth,
-    "WiredHeadset", AudioDeviceKeyEarpiece,
-    "Earpiece", AudioDeviceKeyEarpiece);
+  public static String getAudioDeviceType(AudioDevice audioDevice) {
+    if (audioDevice instanceof AudioDevice.Speakerphone) {
+      return AudioDeviceKeySpeaker;
+    } else if (audioDevice instanceof AudioDevice.BluetoothHeadset) {
+      return AudioDeviceKeyBluetooth;
+    } else if (audioDevice instanceof AudioDevice.WiredHeadset
+      || audioDevice instanceof AudioDevice.Earpiece) {
+      return AudioDeviceKeyEarpiece;
+    } else {
+      return null;
+    }
+  }
 
   /**
    * Map of UUIDs to all available AudioDevices. Kept up-to-date by the AudioSwitch.
