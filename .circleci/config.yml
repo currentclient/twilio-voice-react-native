@@ -29,7 +29,7 @@ parameters:
 executors:
   default:
     docker:
-      - image: cimg/node:18.19
+      - image: cimg/node:18.19.1@sha256:97b64f6dda10d5c389147eee50c1c99eef0e1713d553d8f103c3821b8e1830ae
     working_directory: ~/project
   ios-executor:
     macos:
