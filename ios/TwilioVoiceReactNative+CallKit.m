@@ -21,6 +21,11 @@ NSString * const kTwilioVoiceReactNativeResourceBundleName = @"TwilioVoiceReactN
 
 @interface TwilioVoiceReactNative (CallKit) <CXProviderDelegate, TVOCallDelegate, AVAudioPlayerDelegate>
 
+// Runs `block` (which calls into TwilioVoice.framework on behalf of `action`)
+// under an exception guard. See the doc comment on the implementation for why
+// this exists.
+- (BOOL)tvrn_performCallKitAction:(CXAction *)action block:(void (^)(void))block;
+
 @end
 
 @implementation TwilioVoiceReactNative (CallKit)
@@ -206,9 +211,19 @@ NSString * const kTwilioVoiceReactNativeResourceBundleName = @"TwilioVoiceReactN
 
 - (void)performAnswerVoiceCallWithUUID:(NSUUID *)uuid
                             completion:(void(^)(BOOL success))completionHandler {
-    NSAssert(self.callInviteMap[uuid.UUIDString], @"No call invite");
-    
     TVOCallInvite *callInvite = self.callInviteMap[uuid.UUIDString];
+    if (!callInvite) {
+        // The caller can hang up (or the invite can simply expire) in the
+        // window between CallKit showing the incoming-call UI and the user
+        // tapping Answer -- callInviteMap is already empty by the time this
+        // runs. That used to be NSAssert, which raises just like a
+        // TwilioVoice.framework precondition failure and is exactly the
+        // "acting on a call that is already disconnected or unknown" shape
+        // PRO-7753 is about: fail the action instead of aborting the process.
+        RCTLogError(@"[TwilioVoiceReactNative] performAnswerVoiceCallWithUUID: no call invite for %@ (already canceled/expired) -- failing instead of crashing.", uuid.UUIDString);
+        completionHandler(NO);
+        return;
+    }
     TVOAcceptOptions *acceptOptions = [TVOAcceptOptions optionsWithCallInvite:callInvite block:^(TVOAcceptOptionsBuilder *builder) {
         builder.uuid = uuid;
         builder.callMessageDelegate = self;
@@ -247,6 +262,36 @@ NSString * const kTwilioVoiceReactNativeResourceBundleName = @"TwilioVoiceReactN
 
 #pragma mark - CXProviderDelegate
 
+// TwilioVoice.framework raises a native NSException (not an NSError) when we
+// act on a call/invite it considers invalid -- e.g. answering an invite the
+// caller already canceled, or holding/muting/sending DTMF on a call that has
+// already disconnected underneath us. CXProvider dispatches every
+// performXCallAction: on the main thread with no exception handler of its
+// own, so an uncaught raise here unwinds straight out of
+// `-[CXProvider performAction:]` and takes the whole process down with it
+// (PRO-7753: EXC_CRASH/SIGABRT, main thread, mid-call). The app dying does not
+// end the call -- it keeps running server-side until Twilio's own RTP-timeout
+// watchdog (warning 32014) tears it down 60-90s later, with nobody able to
+// see or end it in between.
+//
+// This is the single choke point every performXCallAction: routes its
+// TwilioVoice SDK call through: @try/@catch here turns a raise into a normal
+// failed CallKit action (`[action fail]`) instead of a SIGABRT. Callers must
+// NOT also call `fulfill`/`fail` inside `block` -- this method owns reporting
+// failure back to CallKit; the caller is only responsible for `fulfill` on
+// success (via the returned BOOL).
+- (BOOL)tvrn_performCallKitAction:(CXAction *)action block:(void (^)(void))block {
+    @try {
+        block();
+        return YES;
+    } @catch (NSException *exception) {
+        RCTLogError(@"[TwilioVoiceReactNative] TwilioVoice raised %@ handling %@ (uuid %@): %@ -- failing the CallKit action instead of crashing.",
+                    exception.name, NSStringFromClass([action class]), action.callUUID.UUIDString, exception.reason);
+        [action fail];
+        return NO;
+    }
+}
+
 - (void)providerDidReset:(CXProvider *)provider {
     [TwilioVoiceReactNative twilioAudioDevice].enabled = NO;
 
@@ -277,21 +322,25 @@ NSString * const kTwilioVoiceReactNativeResourceBundleName = @"TwilioVoiceReactN
 }
 
 - (void)provider:(CXProvider *)provider performEndCallAction:(CXEndCallAction *)action {
-    if (self.callMap[action.callUUID.UUIDString]) {
-        TVOCall *call = self.callMap[action.callUUID.UUIDString];
-        [call disconnect];
-    } else if (self.callInviteMap[action.callUUID.UUIDString]) {
-        TVOCallInvite *callInvite = self.callInviteMap[action.callUUID.UUIDString];
-        [callInvite reject];
-        [self sendEventWithName:kTwilioVoiceReactNativeScopeCallInvite
-                           body:@{
-                             kTwilioVoiceReactNativeCallInviteEventKeyType: kTwilioVoiceReactNativeCallInviteEventTypeValueRejected,
-                             kTwilioVoiceReactNativeCallInviteEventKeyCallSid: callInvite.callSid,
-                             kTwilioVoiceReactNativeEventKeyCallInvite: [self callInviteInfo:callInvite]}];
-        [self.callInviteMap removeObjectForKey:action.callUUID.UUIDString];
+    BOOL succeeded = [self tvrn_performCallKitAction:action block:^{
+        if (self.callMap[action.callUUID.UUIDString]) {
+            TVOCall *call = self.callMap[action.callUUID.UUIDString];
+            [call disconnect];
+        } else if (self.callInviteMap[action.callUUID.UUIDString]) {
+            TVOCallInvite *callInvite = self.callInviteMap[action.callUUID.UUIDString];
+            [callInvite reject];
+            [self sendEventWithName:kTwilioVoiceReactNativeScopeCallInvite
+                               body:@{
+                                 kTwilioVoiceReactNativeCallInviteEventKeyType: kTwilioVoiceReactNativeCallInviteEventTypeValueRejected,
+                                 kTwilioVoiceReactNativeCallInviteEventKeyCallSid: callInvite.callSid,
+                                 kTwilioVoiceReactNativeEventKeyCallInvite: [self callInviteInfo:callInvite]}];
+            [self.callInviteMap removeObjectForKey:action.callUUID.UUIDString];
+        }
+    }];
+
+    if (succeeded) {
+        [action fulfill];
     }
-    
-    [action fulfill];
 }
 
 - (void)provider:(CXProvider *)provider performStartCallAction:(CXStartCallAction *)action {
@@ -299,63 +348,89 @@ NSString * const kTwilioVoiceReactNativeResourceBundleName = @"TwilioVoiceReactN
     [TwilioVoiceReactNative twilioAudioDevice].block();
 
     [self.callKitProvider reportOutgoingCallWithUUID:action.callUUID startedConnectingAtDate:[NSDate date]];
-    
+
     __weak typeof(self) weakSelf = self;
-    [self performVoiceCallWithUUID:action.callUUID client:nil completion:^(BOOL success) {
-        __strong typeof(self) strongSelf = weakSelf;
-        if (success) {
-            NSLog(@"performVoiceCallWithUUID successful");
-            [strongSelf.callKitProvider reportOutgoingCallWithUUID:action.callUUID connectedAtDate:[NSDate date]];
-        } else {
-            NSLog(@"performVoiceCallWithUUID failed");
-        }
+    BOOL succeeded = [self tvrn_performCallKitAction:action block:^{
+        [weakSelf performVoiceCallWithUUID:action.callUUID client:nil completion:^(BOOL success) {
+            __strong typeof(self) strongSelf = weakSelf;
+            if (success) {
+                NSLog(@"performVoiceCallWithUUID successful");
+                [strongSelf.callKitProvider reportOutgoingCallWithUUID:action.callUUID connectedAtDate:[NSDate date]];
+            } else {
+                NSLog(@"performVoiceCallWithUUID failed");
+            }
+        }];
     }];
-    
-    [action fulfill];
+
+    if (succeeded) {
+        [action fulfill];
+    }
 }
 
 - (void)provider:(CXProvider *)provider performAnswerCallAction:(CXAnswerCallAction *)action {
     [TwilioVoiceReactNative twilioAudioDevice].enabled = NO;
     [TwilioVoiceReactNative twilioAudioDevice].block();
-    
-    [self performAnswerVoiceCallWithUUID:action.callUUID completion:^(BOOL success) {
-        if (success) {
-            NSLog(@"performAnswerVoiceCallWithUUID successful");
-        } else {
-            NSLog(@"performAnswerVoiceCallWithUUID failed");
-        }
+
+    BOOL succeeded = [self tvrn_performCallKitAction:action block:^{
+        [self performAnswerVoiceCallWithUUID:action.callUUID completion:^(BOOL success) {
+            if (success) {
+                NSLog(@"performAnswerVoiceCallWithUUID successful");
+            } else {
+                NSLog(@"performAnswerVoiceCallWithUUID failed");
+            }
+        }];
     }];
-        
-    [action fulfill];
+
+    if (succeeded) {
+        [action fulfill];
+    }
 }
 
 - (void)provider:(CXProvider *)provider performSetHeldCallAction:(CXSetHeldCallAction *)action {
-    if (self.callMap[action.callUUID.UUIDString]) {
-        TVOCall *call = self.callMap[action.callUUID.UUIDString];
-        [call setOnHold:action.isOnHold];
-        [action fulfill];
-    } else {
+    TVOCall *call = self.callMap[action.callUUID.UUIDString];
+    if (!call) {
         [action fail];
+        return;
+    }
+
+    BOOL succeeded = [self tvrn_performCallKitAction:action block:^{
+        [call setOnHold:action.isOnHold];
+    }];
+
+    if (succeeded) {
+        [action fulfill];
     }
 }
 
 - (void)provider:(CXProvider *)provider performSetMutedCallAction:(CXSetMutedCallAction *)action {
-    if (self.callMap[action.callUUID.UUIDString]) {
-        TVOCall *call = self.callMap[action.callUUID.UUIDString];
-        [call setMuted:action.isMuted];
-        [action fulfill];
-    } else {
+    TVOCall *call = self.callMap[action.callUUID.UUIDString];
+    if (!call) {
         [action fail];
+        return;
+    }
+
+    BOOL succeeded = [self tvrn_performCallKitAction:action block:^{
+        [call setMuted:action.isMuted];
+    }];
+
+    if (succeeded) {
+        [action fulfill];
     }
 }
 
 - (void)provider:(CXProvider *)provider performPlayDTMFCallAction:(CXPlayDTMFCallAction *)action {
-    if (self.callMap[action.callUUID.UUIDString]) {
-        TVOCall *call = self.callMap[action.callUUID.UUIDString];
-        [call sendDigits:action.digits];
-        [action fulfill];
-    } else {
+    TVOCall *call = self.callMap[action.callUUID.UUIDString];
+    if (!call) {
         [action fail];
+        return;
+    }
+
+    BOOL succeeded = [self tvrn_performCallKitAction:action block:^{
+        [call sendDigits:action.digits];
+    }];
+
+    if (succeeded) {
+        [action fulfill];
     }
 }
 
