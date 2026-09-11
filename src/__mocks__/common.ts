@@ -119,3 +119,17 @@ class MockPlatform {
 export const Platform = new MockPlatform();
 
 export const setTimeout = jest.fn();
+
+/**
+ * Identity passthrough: existing tests invoke handlers directly (e.g.
+ * `voice['_handleNativeEvent'](...)`) and assert on the exact reference
+ * registered with `NativeEventEmitter.addListener`, so the mock must not
+ * alter or wrap `handler`. `guardNativeEventHandler`'s own catching
+ * behavior is covered directly against the real implementation in
+ * `src/__tests__/guardNativeEventHandler.test.ts`, not through this mock.
+ */
+export function guardNativeEventHandler<
+  THandler extends (...args: any[]) => void
+>(_scope: string, handler: THandler): THandler {
+  return handler;
+}

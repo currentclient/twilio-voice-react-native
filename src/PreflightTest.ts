@@ -264,7 +264,10 @@ export class PreflightTest extends EventEmitter {
 
     common.NativeEventEmitter.addListener(
       Constants.ScopePreflightTest,
-      this._handleNativeEvent
+      common.guardNativeEventHandler(
+        Constants.ScopePreflightTest,
+        this._handleNativeEvent
+      )
     );
 
     // by using a setTimeout here, we let the call stack empty before we flush
