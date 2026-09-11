@@ -5,6 +5,7 @@ import { createNativeErrorInfo } from '../__mocks__/Error';
 import { createStatsReport } from '../__mocks__/RTCStats';
 import { Call } from '../Call';
 import { NativeEventEmitter, NativeModule } from '../common';
+import { guardedHandlerTag } from '../__mocks__/guardedHandlerTag';
 import { Constants } from '../constants';
 import { InvalidArgumentError } from '../error/InvalidArgumentError';
 import type { NativeCallEventType } from '../type/Call';
@@ -69,6 +70,8 @@ describe('Call class', () => {
         // eslint-disable-next-line dot-notation
         [Constants.ScopeCall, call['_handleNativeEvent']],
       ]);
+      // eslint-disable-next-line dot-notation
+      expect((call['_handleNativeEvent'] as any)[guardedHandlerTag]).toBe(true);
     });
   });
 

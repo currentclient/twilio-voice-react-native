@@ -10,6 +10,7 @@ import { IncomingCallMessage } from '../CallMessage/IncomingCallMessage';
 import { OutgoingCallMessage } from '../CallMessage/OutgoingCallMessage';
 import { TwilioError } from '../error/TwilioError';
 import { NativeEventEmitter, NativeModule, Platform } from '../common';
+import { guardedHandlerTag } from '../__mocks__/guardedHandlerTag';
 import { Constants } from '../constants';
 import type { NativeCallInviteEvent } from '../type/CallInvite';
 
@@ -78,6 +79,10 @@ describe('CallInvite class', () => {
         // eslint-disable-next-line dot-notation
         [Constants.ScopeCallInvite, callInvite['_handleNativeCallInviteEvent']],
       ]);
+      expect(
+        // eslint-disable-next-line dot-notation
+        (callInvite['_handleNativeCallInviteEvent'] as any)[guardedHandlerTag]
+      ).toBe(true);
     });
   });
 

@@ -5,6 +5,7 @@ import { mockVoiceNativeEvents } from '../__mocks__/Voice';
 import type { AudioDevice } from '../AudioDevice';
 import type { CallInvite } from '../CallInvite';
 import { NativeEventEmitter, NativeModule, Platform } from '../common';
+import { guardedHandlerTag } from '../__mocks__/guardedHandlerTag';
 import { Constants } from '../constants';
 import {
   InvalidArgumentError,
@@ -88,6 +89,10 @@ describe('Voice class', () => {
           // eslint-disable-next-line dot-notation
           [Constants.ScopeVoice, voice['_handleNativeEvent']],
         ]);
+        // eslint-disable-next-line dot-notation
+        expect((voice['_handleNativeEvent'] as any)[guardedHandlerTag]).toBe(
+          true
+        );
       });
     });
   });
