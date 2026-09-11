@@ -1,5 +1,5 @@
 //
-//  TwilioVoiceReactNative.mm
+//  TwilioVoiceReactNative.m
 //  TwilioVoiceReactNative
 //
 //  Copyright © 2022 Twilio, Inc. All rights reserved.
@@ -7,15 +7,10 @@
 
 @import AVKit;
 
-#import <React/RCTLog.h>
-
 #import "TwilioVoicePushRegistry.h"
 #import "TwilioVoiceReactNative.h"
 #import "TwilioVoiceReactNativeConstants.h"
 #import "TwilioVoiceStatsReport.h"
-
-#include <jsi/jsi.h>
-#include <exception>
 
 NSString * const kTwilioVoiceReactNativeVoiceError = @"Voice error";
 dispatch_time_t const kPushRegistryDeviceTokenRetryTimeout = 3;
@@ -500,42 +495,7 @@ RCT_EXPORT_MODULE();
 
 - (void)sendEventWithName:(NSString *)eventName body:(id)body {
     if (_hasObserver) {
-        // Every native->JS entry point in this fork funnels through here:
-        // TVOCallDelegate/CXProviderDelegate callbacks (CallKit delegate
-        // bridges), -handleRouteChange: (the audio-route/proximity-adjacent
-        // listener registered for AVAudioSessionRouteChangeNotification),
-        // -handlePushRegistryNotification:, and the CallInvite/CallMessage/
-        // PreflightTest categories all call [self sendEventWithName:body:]
-        // directly rather than going through a queued bridge call.
-        //
-        // On this app's runtime, that dispatch invokes the registered JS
-        // listener in-line on the calling native thread. If the listener
-        // throws, the resulting JS exception unwinds straight through
-        // HermesRuntimeImpl::call() -> throwPendingError() with nothing
-        // upstream to catch it, which is an uncaught C++ exception ->
-        // std::terminate() -> abort() of the whole process -- observed
-        // mid-call on iOS (PRO-7754), where the app dies but the native
-        // call/CallKit session outlives it with no way to see or end it
-        // locally. Catch here so a bug in a JS listener degrades to one
-        // dropped event instead of a process-wide crash, and log the JS
-        // error's message/stack -- the crash logs that led to this fix had
-        // an uncaught-exception signature but no JS error text at all,
-        // because nothing on this path ever captured it.
-        try {
-            [super sendEventWithName:eventName body:body];
-        } catch (const facebook::jsi::JSError &error) {
-            RCTLogError(@"[TwilioVoiceReactNative] Uncaught JS exception from listener for event '%@': %s\n%s",
-                        eventName,
-                        error.getMessage().c_str(),
-                        error.getStack().c_str());
-        } catch (const std::exception &error) {
-            RCTLogError(@"[TwilioVoiceReactNative] Uncaught C++ exception from listener for event '%@': %s",
-                        eventName,
-                        error.what());
-        } catch (...) {
-            RCTLogError(@"[TwilioVoiceReactNative] Uncaught unknown exception from listener for event '%@'",
-                        eventName);
-        }
+        [super sendEventWithName:eventName body:body];
     } else {
         NSLog(@"No event observer registered yet. Omitting event: %@, event body: %@", eventName, body);
     }
