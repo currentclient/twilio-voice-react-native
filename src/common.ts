@@ -16,3 +16,5 @@ export const NativeEventEmitter = new ReactNative.NativeEventEmitter(
 export const Platform = ReactNative.Platform;
 
 export const setTimeout = global.setTimeout;
+
+export { guardNativeEventHandler } from './utility/guardNativeEventHandler';

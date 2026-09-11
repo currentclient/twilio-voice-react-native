@@ -5,6 +5,7 @@ import {
 } from '../../__mocks__/CallMessage';
 import { OutgoingCallMessage } from '../../CallMessage/OutgoingCallMessage';
 import { NativeEventEmitter } from '../../common';
+import { guardedHandlerTag } from '../../__mocks__/guardedHandlerTag';
 import { Constants } from '../../constants';
 import type { NativeEventEmitter as MockNativeEventEmitterType } from '../../__mocks__/common';
 import type { NativeCallMessageEventType } from '../../type/CallMessage';
@@ -82,6 +83,10 @@ describe('OutgoingCallMessage class', () => {
         // eslint-disable-next-line dot-notation
         [Constants.ScopeCallMessage, outgoingCallMessage['_handleNativeEvent']],
       ]);
+      expect(
+        // eslint-disable-next-line dot-notation
+        (outgoingCallMessage['_handleNativeEvent'] as any)[guardedHandlerTag]
+      ).toBe(true);
     });
   });
 

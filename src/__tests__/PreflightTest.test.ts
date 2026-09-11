@@ -2,6 +2,7 @@
 /* eslint-disable no-new */
 
 import type * as CommonMock from '../__mocks__/common';
+import { guardedHandlerTag } from '../__mocks__/guardedHandlerTag';
 import { PreflightTest } from '../PreflightTest';
 import * as Common from '../common';
 import { Constants } from '../constants';
@@ -87,6 +88,7 @@ describe('PreflightTest', () => {
         expect(listener).toBeInstanceOf(Function);
 
         expect(listener).toEqual(preflight['_handleNativeEvent']);
+        expect((listener as any)[guardedHandlerTag]).toBe(true);
       });
     });
   });

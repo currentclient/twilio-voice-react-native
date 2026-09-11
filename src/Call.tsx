@@ -7,7 +7,11 @@
 
 import { EventEmitter } from 'eventemitter3';
 import type { RTCStats } from './';
-import { NativeModule, NativeEventEmitter } from './common';
+import {
+  guardNativeEventHandler,
+  NativeModule,
+  NativeEventEmitter,
+} from './common';
 import { Constants } from './constants';
 import type {
   NativeCallEvent,
@@ -472,7 +476,7 @@ export class Call extends EventEmitter {
 
     NativeEventEmitter.addListener(
       Constants.ScopeCall,
-      this._handleNativeEvent
+      guardNativeEventHandler(Constants.ScopeCall, this._handleNativeEvent)
     );
   }
 

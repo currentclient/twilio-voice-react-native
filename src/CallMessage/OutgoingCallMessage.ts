@@ -12,7 +12,7 @@ import type {
   NativeCallMessageInfo,
 } from '../type/CallMessage';
 import { Constants } from '../constants';
-import { NativeEventEmitter } from '../common';
+import { guardNativeEventHandler, NativeEventEmitter } from '../common';
 import { constructTwilioError } from '../error/utility';
 import { IncomingCallMessage } from './IncomingCallMessage';
 
@@ -182,7 +182,10 @@ export class OutgoingCallMessage extends IncomingCallMessage {
     };
     NativeEventEmitter.addListener(
       Constants.ScopeCallMessage,
-      this._handleNativeEvent
+      guardNativeEventHandler(
+        Constants.ScopeCallMessage,
+        this._handleNativeEvent
+      )
     );
   }
 

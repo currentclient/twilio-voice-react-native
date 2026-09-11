@@ -9,6 +9,7 @@ import { createNativeAudioDevicesInfo } from './AudioDevice';
 import { createNativeCallInfo } from './Call';
 import { createNativeCallInviteInfo } from './CallInvite';
 import { createStatsReport } from './RTCStats';
+import { guardedHandlerTag } from './guardedHandlerTag';
 
 export const NativeModule = {
   /**
@@ -119,3 +120,28 @@ class MockPlatform {
 export const Platform = new MockPlatform();
 
 export const setTimeout = jest.fn();
+
+export { guardedHandlerTag } from './guardedHandlerTag';
+
+/**
+ * Identity passthrough: existing tests invoke handlers directly (e.g.
+ * `voice['_handleNativeEvent'](...)`) and assert on the exact reference
+ * registered with `NativeEventEmitter.addListener`, so the mock must not
+ * wrap `handler` in a new function. `guardNativeEventHandler`'s own
+ * catching behavior is covered directly against the real implementation
+ * in `src/__tests__/guardNativeEventHandler.test.ts`, not through this
+ * mock.
+ *
+ * It still tags the returned (same) reference so tests can assert that
+ * the function actually registered with `NativeEventEmitter.addListener`
+ * went through this call at all -- ironhide-cc's PR #31 review nit: a
+ * regression that reverted to registering the raw handler directly would
+ * otherwise stay green, since a passthrough mock is indistinguishable
+ * from no wrapping at all by reference equality.
+ */
+export function guardNativeEventHandler<
+  THandler extends (...args: any[]) => void
+>(_scope: string, handler: THandler): THandler {
+  (handler as { [guardedHandlerTag]?: true })[guardedHandlerTag] = true;
+  return handler;
+}

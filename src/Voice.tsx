@@ -9,7 +9,12 @@ import { EventEmitter } from 'eventemitter3';
 import { AudioDevice } from './AudioDevice';
 import { Call } from './Call';
 import { CallInvite } from './CallInvite';
-import { NativeEventEmitter, NativeModule, Platform } from './common';
+import {
+  guardNativeEventHandler,
+  NativeEventEmitter,
+  NativeModule,
+  Platform,
+} from './common';
 import { Constants } from './constants';
 import { InvalidArgumentError } from './error/InvalidArgumentError';
 import { InvalidStateError } from './error/InvalidStateError';
@@ -283,7 +288,7 @@ export class Voice extends EventEmitter {
 
     NativeEventEmitter.addListener(
       Constants.ScopeVoice,
-      this._handleNativeEvent
+      guardNativeEventHandler(Constants.ScopeVoice, this._handleNativeEvent)
     );
   }
 

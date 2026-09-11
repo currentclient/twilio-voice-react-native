@@ -11,3 +11,4 @@ export declare const NativeModule: TwilioVoiceReactNativeType;
 export declare const NativeEventEmitter: ReactNative.NativeEventEmitter;
 export declare const Platform: ReactNative.Platform;
 export declare const setTimeout: ((callback: (...args: any[]) => void, ms?: number | undefined, ...args: any[]) => NodeJS.Timeout) & typeof globalThis.setTimeout;
+export { guardNativeEventHandler } from './utility/guardNativeEventHandler';

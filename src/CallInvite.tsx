@@ -7,7 +7,12 @@
 
 import { EventEmitter } from 'eventemitter3';
 import { Call } from './Call';
-import { NativeEventEmitter, NativeModule, Platform } from './common';
+import {
+  guardNativeEventHandler,
+  NativeEventEmitter,
+  NativeModule,
+  Platform,
+} from './common';
 import { InvalidStateError } from './error/InvalidStateError';
 import { TwilioError } from './error/TwilioError';
 import { UnsupportedPlatformError } from './error/UnsupportedPlatformError';
@@ -301,7 +306,10 @@ export class CallInvite extends EventEmitter {
 
     NativeEventEmitter.addListener(
       Constants.ScopeCallInvite,
-      this._handleNativeCallInviteEvent
+      guardNativeEventHandler(
+        Constants.ScopeCallInvite,
+        this._handleNativeCallInviteEvent
+      )
     );
   }
 
