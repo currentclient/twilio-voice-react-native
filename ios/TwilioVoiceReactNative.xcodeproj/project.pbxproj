@@ -37,7 +37,7 @@
 		8FC9E80C2B74A4A100F5D778 /* TwilioVoiceReactNative+CallInvite.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "TwilioVoiceReactNative+CallInvite.m"; sourceTree = "<group>"; };
 		8FC9E80E2B74A57800F5D778 /* TwilioVoiceReactNative+CallMessage.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "TwilioVoiceReactNative+CallMessage.m"; sourceTree = "<group>"; };
 		B3E7B5881CC2AC0600A0062D /* TwilioVoiceReactNative.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = TwilioVoiceReactNative.h; sourceTree = "<group>"; };
-		B3E7B5891CC2AC0600A0062D /* TwilioVoiceReactNative.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = TwilioVoiceReactNative.m; sourceTree = "<group>"; };
+		B3E7B5891CC2AC0600A0062D /* TwilioVoiceReactNative.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = TwilioVoiceReactNative.mm; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -66,7 +66,7 @@
 				8F19C42B2683AE0200F765F1 /* TwilioVoicePushRegistry.h */,
 				8F19C42C2683AE0200F765F1 /* TwilioVoicePushRegistry.m */,
 				B3E7B5881CC2AC0600A0062D /* TwilioVoiceReactNative.h */,
-				B3E7B5891CC2AC0600A0062D /* TwilioVoiceReactNative.m */,
+				B3E7B5891CC2AC0600A0062D /* TwilioVoiceReactNative.mm */,
 				8FC9E80C2B74A4A100F5D778 /* TwilioVoiceReactNative+CallInvite.m */,
 				8F5ED22E268D428F00572F00 /* TwilioVoiceReactNative+CallKit.m */,
 				8FC9E80E2B74A57800F5D778 /* TwilioVoiceReactNative+CallMessage.m */,
