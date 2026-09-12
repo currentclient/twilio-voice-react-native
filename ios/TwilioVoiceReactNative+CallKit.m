@@ -24,7 +24,14 @@ NSString * const kTwilioVoiceReactNativeResourceBundleName = @"TwilioVoiceReactN
 // Runs `block` (which calls into TwilioVoice.framework on behalf of `action`)
 // under an exception guard. See the doc comment on the implementation for why
 // this exists.
-- (BOOL)tvrn_performCallKitAction:(CXAction *)action block:(void (^)(void))block;
+//
+// Typed CXCallAction, not CXAction: `callUUID` is declared on CXCallAction,
+// not on its CXAction superclass, and the @catch below reads action.callUUID
+// for the log line. Every call site here (CXEndCallAction, CXStartCallAction,
+// CXAnswerCallAction, CXSetHeldCallAction, CXSetMutedCallAction,
+// CXPlayDTMFCallAction) is already a CXCallAction subclass, so this is not a
+// behavioral narrowing -- just the type the method actually needs.
+- (BOOL)tvrn_performCallKitAction:(CXCallAction *)action block:(void (^)(void))block;
 
 @end
 
@@ -280,7 +287,7 @@ NSString * const kTwilioVoiceReactNativeResourceBundleName = @"TwilioVoiceReactN
 // NOT also call `fulfill`/`fail` inside `block` -- this method owns reporting
 // failure back to CallKit; the caller is only responsible for `fulfill` on
 // success (via the returned BOOL).
-- (BOOL)tvrn_performCallKitAction:(CXAction *)action block:(void (^)(void))block {
+- (BOOL)tvrn_performCallKitAction:(CXCallAction *)action block:(void (^)(void))block {
     @try {
         block();
         return YES;
