@@ -97,6 +97,28 @@ static TVODefaultAudioDevice *sTwilioAudioDevice;
 
         [self subscribeToNotifications];
         [self initializeCallKit];
+        // Create the PKPushRegistry (+ delegate) unconditionally, right here at
+        // native module init — NOT only in response to the JS-exposed
+        // `voice_initializePushRegistry` bridge method (PRO-8096). That method
+        // is called from `TwilioRNVoiceDriver.init()`, which the app only runs
+        // once `VoiceProvider` has a call token — i.e. after login, and after
+        // the RN JS bridge has finished loading and evaluating the bundle.
+        // Apple requires a VoIP app to register for PushKit notifications as
+        // early as possible, ideally synchronously during app launch, because
+        // it may background-launch the process specifically to deliver a VoIP
+        // push: the OS enforces that a reported call follow, with no grace
+        // period (see the timing note in `TwilioVoicePushRegistry.m`). Gating
+        // registry creation behind auth/JS-bootstrap leaves a real window —
+        // any launch where the user is not (yet) authenticated, or the call
+        // token fetch is slow, or the JS bundle takes longer than usual to
+        // evaluate — where an incoming VoIP push has no PKPushRegistry to
+        // report to at all, which the OS treats as a contract violation and
+        // kills the process for (RBSTerminateContext FRONTBOARD 0xBAADCA11 —
+        // "failed to report a CallKit call in response to a PushKit
+        // notification"). Creating the registry here removes that window
+        // entirely; the JS-triggered call later simply replaces it with a
+        // fresh instance, unchanged from today's relogin-cycle behavior.
+        [self initializePushRegistry];
         [self initializeAudioDeviceList];
     }
 
