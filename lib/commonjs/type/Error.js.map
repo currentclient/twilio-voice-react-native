@@ -1,1 +1,1 @@
-{"version":3,"sources":[],"names":[],"mappings":"","sourcesContent":[]}
+{"version":3,"names":[],"sources":["Error.ts"],"sourcesContent":["import type { Constants } from '../constants';\n\nexport interface NativeErrorInfo {\n  code: number;\n  message: string;\n}\n\nexport interface NativeErrorEvent {\n  type: Constants.VoiceEventError;\n  error: NativeErrorInfo;\n}\n"],"mappings":"","ignoreList":[]}
