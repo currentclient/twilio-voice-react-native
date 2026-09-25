@@ -147,6 +147,10 @@ NSString * const kTwilioVoiceReactNativeResourceBundleName = @"TwilioVoiceReactN
     [self.callKitCallController requestTransaction:transaction completion:^(NSError *error) {
         if (error) {
             NSLog(@"Failed to submit answer-call transaction request: %@", error);
+            // The answer action never reached performAnswerCallAction, so
+            // nothing else will settle the stored handler (the JS promise
+            // would hang and the entry would leak).
+            [self tvrn_completeCallKitCallbackForUuid:uuid success:NO];
         } else {
             NSLog(@"Answer-call transaction successfully done");
         }
@@ -303,6 +307,9 @@ NSString * const kTwilioVoiceReactNativeResourceBundleName = @"TwilioVoiceReactN
         RCTLogError(@"[TwilioVoiceReactNative] TwilioVoice raised %@ handling %@ (uuid %@): %@ -- failing the CallKit action instead of crashing.",
                     exception.name, NSStringFromClass([action class]), action.callUUID.UUIDString, exception.reason);
         [action fail];
+        // Settle any handler stored for this call too (answerCallInvite:),
+        // else its JS promise hangs and the dictionary entry leaks.
+        [self tvrn_completeCallKitCallbackForUuid:action.callUUID success:NO];
         return NO;
     }
 }
