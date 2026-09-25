@@ -138,7 +138,9 @@ NSString * const kTwilioVoiceReactNativeResourceBundleName = @"TwilioVoiceReactN
 
 - (void)answerCallInvite:(NSUUID *)uuid
               completion:(void(^)(BOOL success))completionHandler {
-    self.callKitCompletionCallback = completionHandler;
+    if (completionHandler) {
+        self.callKitCompletionCallbacks[uuid.UUIDString] = [completionHandler copy];
+    }
     CXAnswerCallAction *answerCallAction = [[CXAnswerCallAction alloc] initWithCallUUID:uuid];
     CXTransaction *transaction = [[CXTransaction alloc] initWithAction:answerCallAction];
 
@@ -212,8 +214,12 @@ NSString * const kTwilioVoiceReactNativeResourceBundleName = @"TwilioVoiceReactN
     if (call) {
         self.callMap[call.uuid.UUIDString] = call;
         self.callPromiseResolver([self callInfo:call]);
+        if (completionHandler) {
+            self.callKitCompletionCallbacks[call.uuid.UUIDString] = [completionHandler copy];
+        }
+    } else if (completionHandler) {
+        completionHandler(NO);
     }
-    self.callKitCompletionCallback = completionHandler;
 }
 
 - (void)performAnswerVoiceCallWithUUID:(NSUUID *)uuid
@@ -228,6 +234,7 @@ NSString * const kTwilioVoiceReactNativeResourceBundleName = @"TwilioVoiceReactN
         // "acting on a call that is already disconnected or unknown" shape
         // PRO-7753 is about: fail the action instead of aborting the process.
         RCTLogError(@"[TwilioVoiceReactNative] performAnswerVoiceCallWithUUID: no call invite for %@ (already canceled/expired) -- failing instead of crashing.", uuid.UUIDString);
+        [self tvrn_completeCallKitCallbackForUuid:uuid success:NO];
         completionHandler(NO);
         return;
     }
@@ -239,6 +246,7 @@ NSString * const kTwilioVoiceReactNativeResourceBundleName = @"TwilioVoiceReactN
     TVOCall *call = [callInvite acceptWithOptions:acceptOptions delegate:self];
 
     if (!call) {
+        [self tvrn_completeCallKitCallbackForUuid:uuid success:NO];
         completionHandler(NO);
     } else {
         self.callMap[call.uuid.UUIDString] = call;
@@ -299,6 +307,48 @@ NSString * const kTwilioVoiceReactNativeResourceBundleName = @"TwilioVoiceReactN
     }
 }
 
+// Is there a call other than `uuid` still up (anything but Disconnected)?
+// callMap is the sole registry of live TVOCalls (see providerDidReset:), and a
+// call is added to it synchronously inside its own CallKit start/answer action,
+// so at the moment a second action runs the first call is already in here.
+- (BOOL)tvrn_hasOtherLiveCallExcludingUuid:(NSUUID *)uuid {
+    for (NSString *key in self.callMap) {
+        if ([key isEqualToString:uuid.UUIDString]) {
+            continue;
+        }
+        TVOCall *other = self.callMap[key];
+        if (other && other.state != TVOCallStateDisconnected) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+// Reset the shared audio device ahead of a new call's CallKit audio session
+// activation. TVODefaultAudioDevice is ONE process-wide instance that carries
+// the audio for every call, so disabling it and re-running its setup block
+// while another call is live stops that call's audio (Twilio keeps signaling
+// but sees no RTP and ends the leg) -- and when CallKit does not re-activate
+// an already-active session, nothing sets `enabled` back to YES. Only reset it
+// when this is the only call.
+- (void)tvrn_prepareAudioDeviceForCallWithUuid:(NSUUID *)uuid {
+    if ([self tvrn_hasOtherLiveCallExcludingUuid:uuid]) {
+        RCTLogWarn(@"[TwilioVoiceReactNative] Another call is live -- leaving the shared audio device enabled for call %@.", uuid.UUIDString);
+        return;
+    }
+    [TwilioVoiceReactNative twilioAudioDevice].enabled = NO;
+    [TwilioVoiceReactNative twilioAudioDevice].block();
+}
+
+// Invoke and drop the CallKit completion handler that belongs to `uuid`.
+- (void)tvrn_completeCallKitCallbackForUuid:(NSUUID *)uuid success:(BOOL)success {
+    void (^callback)(BOOL) = self.callKitCompletionCallbacks[uuid.UUIDString];
+    if (callback) {
+        [self.callKitCompletionCallbacks removeObjectForKey:uuid.UUIDString];
+        callback(success);
+    }
+}
+
 - (void)providerDidReset:(CXProvider *)provider {
     [TwilioVoiceReactNative twilioAudioDevice].enabled = NO;
 
@@ -351,8 +401,7 @@ NSString * const kTwilioVoiceReactNativeResourceBundleName = @"TwilioVoiceReactN
 }
 
 - (void)provider:(CXProvider *)provider performStartCallAction:(CXStartCallAction *)action {
-    [TwilioVoiceReactNative twilioAudioDevice].enabled = NO;
-    [TwilioVoiceReactNative twilioAudioDevice].block();
+    [self tvrn_prepareAudioDeviceForCallWithUuid:action.callUUID];
 
     [self.callKitProvider reportOutgoingCallWithUUID:action.callUUID startedConnectingAtDate:[NSDate date]];
 
@@ -375,8 +424,7 @@ NSString * const kTwilioVoiceReactNativeResourceBundleName = @"TwilioVoiceReactN
 }
 
 - (void)provider:(CXProvider *)provider performAnswerCallAction:(CXAnswerCallAction *)action {
-    [TwilioVoiceReactNative twilioAudioDevice].enabled = NO;
-    [TwilioVoiceReactNative twilioAudioDevice].block();
+    [self tvrn_prepareAudioDeviceForCallWithUuid:action.callUUID];
 
     BOOL succeeded = [self tvrn_performCallKitAction:action block:^{
         [self performAnswerVoiceCallWithUUID:action.callUUID completion:^(BOOL success) {
@@ -460,10 +508,7 @@ NSString * const kTwilioVoiceReactNativeResourceBundleName = @"TwilioVoiceReactN
                        body:@{kTwilioVoiceReactNativeVoiceEventType: kTwilioVoiceReactNativeCallEventConnected,
                               kTwilioVoiceReactNativeEventKeyCall: [self callInfo:call]}];
 
-    if (self.callKitCompletionCallback) {
-        self.callKitCompletionCallback(YES);
-        self.callKitCompletionCallback = nil;
-    }
+    [self tvrn_completeCallKitCallbackForUuid:call.uuid success:YES];
 }
 
 - (void)call:(TVOCall *)call didDisconnectWithError:(NSError *)error {
@@ -499,16 +544,16 @@ NSString * const kTwilioVoiceReactNativeResourceBundleName = @"TwilioVoiceReactN
                               kTwilioVoiceReactNativeVoiceErrorKeyError: @{kTwilioVoiceReactNativeVoiceErrorKeyCode: @(error.code),
                                                                            kTwilioVoiceReactNativeVoiceErrorKeyMessage: [error localizedDescription]}}];
 
-    if (self.callKitCompletionCallback) {
-        self.callKitCompletionCallback(NO);
-        self.callKitCompletionCallback = nil;
-    }
+    [self tvrn_completeCallKitCallbackForUuid:call.uuid success:NO];
     [self.callKitProvider reportCallWithUUID:call.uuid endedAtDate:[NSDate date] reason:CXCallEndedReasonFailed];
     
     [self callDisconnected:call];
 }
 
 - (void)callDisconnected:(TVOCall *)call {
+    // A call that ends without ever connecting must still settle its own
+    // handler, or its JS promise / CallKit report hangs forever.
+    [self tvrn_completeCallKitCallbackForUuid:call.uuid success:NO];
     for (NSString *uuidKey in [self.callMap allKeys]) {
         TVOCall *activeCall = self.callMap[uuidKey];
         if (activeCall == call) {

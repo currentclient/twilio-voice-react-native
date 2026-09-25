@@ -81,6 +81,7 @@ static TVODefaultAudioDevice *sTwilioAudioDevice;
         _callMap = [NSMutableDictionary dictionary];
         _callConnectMap = [NSMutableDictionary dictionary];
         _callInviteMap = [NSMutableDictionary dictionary];
+        _callKitCompletionCallbacks = [NSMutableDictionary dictionary];
         _cancelledCallInviteMap = [NSMutableDictionary dictionary];
         _audioDevices = [NSMutableDictionary dictionary];
 

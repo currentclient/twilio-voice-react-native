@@ -34,7 +34,13 @@ FOUNDATION_EXPORT NSString * const kTwilioVoiceReactNativeEventKeyCancelledCallI
 
 @property (nonatomic, copy) NSString *accessToken;
 @property (nonatomic, copy) NSDictionary *twimlParams;
-@property (nonatomic, strong) void(^callKitCompletionCallback)(BOOL);
+// CallKit completion handlers keyed by call UUID string. This used to be one
+// shared slot, so a second call starting (or being answered) while another was
+// still connecting overwrote the first call's handler: only one of them was
+// ever invoked (from callDidConnect:) and the other call's JS promise / CallKit
+// "connected" report never fired. One entry per call keeps each call's handler
+// tied to that call's own connect/fail/disconnect events.
+@property (nonatomic, readonly, strong) NSMutableDictionary<NSString *, void(^)(BOOL)> *callKitCompletionCallbacks;
 @property (nonatomic, strong) RCTPromiseResolveBlock callPromiseResolver;
 
 @property (nonatomic, strong) TVOPreflightTest *preflightTest;
