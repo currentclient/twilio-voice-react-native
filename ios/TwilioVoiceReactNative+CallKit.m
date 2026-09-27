@@ -58,6 +58,12 @@ NSString * const kTwilioVoiceReactNativeResourceBundleName = @"TwilioVoiceReactN
         callKitConfiguration.maximumCallsPerCallGroup = 1;
     }
 
+    // CXProviderConfiguration defaults includesCallsInRecents to YES. Default it to
+    // NO (matching the shared provider created in TwilioVoicePushRegistry +initialize)
+    // so a nil/partial configuration -- e.g. the init-time initializeCallKit -- does not
+    // silently put calls into the iOS Phone app's Recents (PRO-8886).
+    callKitConfiguration.includesCallsInRecents = NO;
+
     float version = [[UIDevice currentDevice].systemVersion floatValue];
     if (version > 11.0 && configuration[kTwilioVoiceReactNativeCallKitIncludesCallsInRecents]) {
         callKitConfiguration.includesCallsInRecents = [configuration[kTwilioVoiceReactNativeCallKitIncludesCallsInRecents] boolValue];
