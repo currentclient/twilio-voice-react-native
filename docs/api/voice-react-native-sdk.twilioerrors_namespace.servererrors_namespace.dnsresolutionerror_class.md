@@ -11,7 +11,7 @@ ServerErrors.DNSResolutionError error. Error code `31530`<!-- -->.
 ```typescript
 class DNSResolutionError extends TwilioError 
 ```
-<b>Extends:</b> TwilioError
+<b>Extends:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Constructors
 

@@ -11,7 +11,7 @@ Error describing that an SDK function is invoked with an invalid argument.
 ```typescript
 export declare class InvalidArgumentError extends TwilioError 
 ```
-<b>Extends:</b> TwilioError
+<b>Extends:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Constructors
 

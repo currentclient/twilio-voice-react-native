@@ -11,3 +11,5 @@ Failed event. Raised when the PreflightTest was unable to be performed.
 ```typescript
 type Failed = (error: TwilioError) => void;
 ```
+<b>References:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
+

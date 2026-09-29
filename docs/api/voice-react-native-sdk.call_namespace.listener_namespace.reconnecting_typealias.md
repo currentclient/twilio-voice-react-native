@@ -11,6 +11,7 @@ Reconnecting event listener. This should be the function signature of any event 
 ```typescript
 type Reconnecting = (error: TwilioError) => void;
 ```
+<b>References:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Remarks
 

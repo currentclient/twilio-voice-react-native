@@ -11,7 +11,7 @@ MediaErrors.MediaDtlsTransportFailedError error. Error code `53407`<!-- -->.
 ```typescript
 class MediaDtlsTransportFailedError extends TwilioError 
 ```
-<b>Extends:</b> TwilioError
+<b>Extends:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Constructors
 

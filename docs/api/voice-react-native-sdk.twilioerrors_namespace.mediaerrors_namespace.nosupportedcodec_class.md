@@ -11,7 +11,7 @@ MediaErrors.NoSupportedCodec error. Error code `53404`<!-- -->.
 ```typescript
 class NoSupportedCodec extends TwilioError 
 ```
-<b>Extends:</b> TwilioError
+<b>Extends:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Constructors
 

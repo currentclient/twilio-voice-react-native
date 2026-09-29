@@ -11,7 +11,7 @@ GeneralErrors.ConnectionError error. Error code `31005`<!-- -->.
 ```typescript
 class ConnectionError extends TwilioError 
 ```
-<b>Extends:</b> TwilioError
+<b>Extends:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Constructors
 

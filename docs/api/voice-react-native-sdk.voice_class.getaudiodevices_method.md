@@ -16,7 +16,7 @@ getAudioDevices(): Promise<{
 ```
 <b>Returns:</b>
 
-Promise&lt;{ audioDevices: [AudioDevice](./voice-react-native-sdk.audiodevice_class.md)<!-- -->\[\]; selectedDevice?: [AudioDevice](./voice-react-native-sdk.audiodevice_class.md)<!-- -->; }&gt;
+Promise&lt;{ audioDevices: AudioDevice\[\]; selectedDevice?: AudioDevice; }&gt;
 
 A `Promise` that - Resolves with a list of the native device's audio devices and the currently selected device.
 

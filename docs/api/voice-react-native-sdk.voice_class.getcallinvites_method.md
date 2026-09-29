@@ -13,7 +13,7 @@ getCallInvites(): Promise<ReadonlyMap<Uuid, CallInvite>>;
 ```
 <b>Returns:</b>
 
-Promise&lt;ReadonlyMap&lt;Uuid, [CallInvite](./voice-react-native-sdk.callinvite_class.md)<!-- -->&gt;&gt;
+Promise&lt;ReadonlyMap&lt;Uuid, CallInvite&gt;&gt;
 
 A `Promise` that - Resolves with a mapping of `Uuid`<!-- -->s to [CallInvite](./voice-react-native-sdk.callinvite_class.md)<!-- -->s.
 

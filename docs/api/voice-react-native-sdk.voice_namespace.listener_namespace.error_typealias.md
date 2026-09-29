@@ -11,6 +11,7 @@ Error event listener. This should be the function signature of an event listener
 ```typescript
 type Error = (error: TwilioError) => void;
 ```
+<b>References:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Remarks
 

@@ -20,7 +20,7 @@ accept(options?: CallInvite.AcceptOptions): Promise<Call>;
 
 <b>Returns:</b>
 
-Promise&lt;[Call](./voice-react-native-sdk.call_class.md)<!-- -->&gt;
+Promise&lt;Call&gt;
 
 - Resolves when a [Call object](./voice-react-native-sdk.call_class.md) associated with this [CallInvite](./voice-react-native-sdk.callinvite_class.md) has been created.
 

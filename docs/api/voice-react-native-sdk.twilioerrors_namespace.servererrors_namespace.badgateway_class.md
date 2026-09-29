@@ -11,7 +11,7 @@ ServerErrors.BadGateway error. Error code `31502`<!-- -->.
 ```typescript
 class BadGateway extends TwilioError 
 ```
-<b>Extends:</b> TwilioError
+<b>Extends:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Constructors
 

@@ -11,7 +11,6 @@ Audio devices updated event listener. This should be the function signature of a
 ```typescript
 type AudioDevicesUpdated = (audioDevices: AudioDevice[], selectedDevice?: AudioDevice) => void;
 ```
-<b>References:</b> [AudioDevice](./voice-react-native-sdk.audiodevice_class.md)
 
 ## Remarks
 

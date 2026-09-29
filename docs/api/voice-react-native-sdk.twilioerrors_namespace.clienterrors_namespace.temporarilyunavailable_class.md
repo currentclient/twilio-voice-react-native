@@ -11,7 +11,7 @@ ClientErrors.TemporarilyUnavailable error. Error code `31480`<!-- -->.
 ```typescript
 class TemporarilyUnavailable extends TwilioError 
 ```
-<b>Extends:</b> TwilioError
+<b>Extends:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Constructors
 

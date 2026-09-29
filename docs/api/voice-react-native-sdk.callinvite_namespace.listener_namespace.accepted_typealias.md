@@ -11,7 +11,6 @@ Accepted event listener. This should be the function signature of any event list
 ```typescript
 type Accepted = (call: Call) => void;
 ```
-<b>References:</b> [Call](./voice-react-native-sdk.call_class.md)
 
 ## Remarks
 

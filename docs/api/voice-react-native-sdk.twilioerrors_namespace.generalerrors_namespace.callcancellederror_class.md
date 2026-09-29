@@ -11,7 +11,7 @@ GeneralErrors.CallCancelledError error. Error code `31008`<!-- -->.
 ```typescript
 class CallCancelledError extends TwilioError 
 ```
-<b>Extends:</b> TwilioError
+<b>Extends:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Constructors
 

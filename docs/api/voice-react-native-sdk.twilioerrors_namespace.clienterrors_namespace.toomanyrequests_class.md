@@ -11,7 +11,7 @@ ClientErrors.TooManyRequests error. Error code `31429`<!-- -->.
 ```typescript
 class TooManyRequests extends TwilioError 
 ```
-<b>Extends:</b> TwilioError
+<b>Extends:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Constructors
 

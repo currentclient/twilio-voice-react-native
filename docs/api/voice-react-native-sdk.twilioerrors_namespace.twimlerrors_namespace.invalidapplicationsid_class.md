@@ -11,7 +11,7 @@ TwiMLErrors.InvalidApplicationSid error. Error code `21218`<!-- -->.
 ```typescript
 class InvalidApplicationSid extends TwilioError 
 ```
-<b>Extends:</b> TwilioError
+<b>Extends:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Constructors
 

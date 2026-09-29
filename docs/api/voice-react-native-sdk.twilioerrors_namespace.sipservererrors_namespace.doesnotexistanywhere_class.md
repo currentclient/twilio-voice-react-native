@@ -11,7 +11,7 @@ SIPServerErrors.DoesNotExistAnywhere error. Error code `31604`<!-- -->.
 ```typescript
 class DoesNotExistAnywhere extends TwilioError 
 ```
-<b>Extends:</b> TwilioError
+<b>Extends:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Constructors
 

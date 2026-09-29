@@ -27,5 +27,5 @@ As outgoingCallMessage events are received from the native layer, outgoingCallMe
 
 |  Constructor | Modifiers | Description |
 |  --- | --- | --- |
-|  [(constructor)({ content, contentType, messageType, voiceEventSid, })](./voice-react-native-sdk.outgoingcallmessage_class._constructor__constructor.md) |  | Constructs a new instance of the <code>OutgoingCallMessage</code> class |
+|  [(constructor)({ content, contentType, messageType, voiceEventSid, }, input)](./voice-react-native-sdk.outgoingcallmessage_class._constructor__constructor.md) |  | Constructs a new instance of the <code>OutgoingCallMessage</code> class |
 

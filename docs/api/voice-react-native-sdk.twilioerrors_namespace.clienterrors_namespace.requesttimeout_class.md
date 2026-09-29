@@ -11,7 +11,7 @@ ClientErrors.RequestTimeout error. Error code `31408`<!-- -->.
 ```typescript
 class RequestTimeout extends TwilioError 
 ```
-<b>Extends:</b> TwilioError
+<b>Extends:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Constructors
 

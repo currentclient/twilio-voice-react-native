@@ -11,7 +11,7 @@ RegistrationErrors.UnsupportedCancelMessageError error. Error code `31302`<!-- -
 ```typescript
 class UnsupportedCancelMessageError extends TwilioError 
 ```
-<b>Extends:</b> TwilioError
+<b>Extends:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Constructors
 
