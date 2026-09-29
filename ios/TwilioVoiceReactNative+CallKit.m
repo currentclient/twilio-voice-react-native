@@ -287,6 +287,36 @@ NSString * const kTwilioVoiceReactNativeResourceBundleName = @"TwilioVoiceReactN
 
 #pragma mark - CXProviderDelegate
 
+// PRO-8992: the foreign call stack (the app's SIP endpoint) shares this
+// provider. Returns its delegate when `uuid` is one of ITS calls, so every
+// action below can hand that call over before touching TwilioVoice state.
+static id<TwilioVoiceForeignCallDelegate> TVRNForeignOwnerOf(NSUUID *uuid) {
+    if (![TwilioVoicePushRegistry foreignCallOwnsUUID:uuid]) {
+        return nil;
+    }
+    return [TwilioVoicePushRegistry foreignCallDelegate];
+}
+
+// Offer an audio-session transition to the foreign stack. YES means it owns
+// the session right now and the shared Twilio audio device must be left alone.
+static BOOL TVRNForeignClaimsAudioSession(CXProvider *provider, AVAudioSession *audioSession, BOOL activated) {
+    id<TwilioVoiceForeignCallDelegate> foreign = [TwilioVoicePushRegistry foreignCallDelegate];
+    SEL selector = activated
+        ? @selector(twilioVoiceProvider:didActivateAudioSession:)
+        : @selector(twilioVoiceProvider:didDeactivateAudioSession:);
+    if (!foreign || ![foreign respondsToSelector:selector]) {
+        return NO;
+    }
+    @try {
+        return activated
+            ? [foreign twilioVoiceProvider:provider didActivateAudioSession:audioSession]
+            : [foreign twilioVoiceProvider:provider didDeactivateAudioSession:audioSession];
+    } @catch (NSException *exception) {
+        NSLog(@"[TwilioVoiceReactNative] Foreign delegate raised %@ on an audio-session %@ -- Twilio keeps it", exception.name, activated ? @"activation" : @"deactivation");
+        return NO;
+    }
+}
+
 // TwilioVoice.framework raises a native NSException (not an NSError) when we
 // act on a call/invite it considers invalid -- e.g. answering an invite the
 // caller already canceled, or holding/muting/sending DTMF on a call that has
@@ -363,6 +393,15 @@ NSString * const kTwilioVoiceReactNativeResourceBundleName = @"TwilioVoiceReactN
 }
 
 - (void)providerDidReset:(CXProvider *)provider {
+    id<TwilioVoiceForeignCallDelegate> foreign = [TwilioVoicePushRegistry foreignCallDelegate];
+    if (foreign && [foreign respondsToSelector:@selector(twilioVoiceProviderDidReset:)]) {
+        @try {
+            [foreign twilioVoiceProviderDidReset:provider];
+        } @catch (NSException *exception) {
+            NSLog(@"[TwilioVoiceReactNative] Foreign delegate raised %@ on provider reset", exception.name);
+        }
+    }
+
     [TwilioVoiceReactNative twilioAudioDevice].enabled = NO;
 
     // The only path that reaches "ringback starts and never stops". A reset
@@ -384,14 +423,35 @@ NSString * const kTwilioVoiceReactNativeResourceBundleName = @"TwilioVoiceReactN
 }
 
 - (void)provider:(CXProvider *)provider didActivateAudioSession:(AVAudioSession *)audioSession {
+    if (TVRNForeignClaimsAudioSession(provider, audioSession, YES)) {
+        return;
+    }
     [TwilioVoiceReactNative twilioAudioDevice].enabled = YES;
 }
 
 - (void)provider:(CXProvider *)provider didDeactivateAudioSession:(AVAudioSession *)audioSession {
+    if (TVRNForeignClaimsAudioSession(provider, audioSession, NO)) {
+        return;
+    }
     [TwilioVoiceReactNative twilioAudioDevice].enabled = NO;
 }
 
 - (void)provider:(CXProvider *)provider performEndCallAction:(CXEndCallAction *)action {
+    id<TwilioVoiceForeignCallDelegate> foreign = TVRNForeignOwnerOf(action.callUUID);
+    if (foreign) {
+        if ([foreign respondsToSelector:@selector(twilioVoiceProvider:performEndCallAction:)]) {
+            @try {
+                [foreign twilioVoiceProvider:provider performEndCallAction:action];
+            } @catch (NSException *exception) {
+                NSLog(@"[TwilioVoiceReactNative] Foreign delegate raised %@ on CXEndCallAction -- failing it", exception.name);
+                [action fail];
+            }
+        } else {
+            [action fail];
+        }
+        return;
+    }
+
     BOOL succeeded = [self tvrn_performCallKitAction:action block:^{
         if (self.callMap[action.callUUID.UUIDString]) {
             TVOCall *call = self.callMap[action.callUUID.UUIDString];
@@ -437,6 +497,21 @@ NSString * const kTwilioVoiceReactNativeResourceBundleName = @"TwilioVoiceReactN
 }
 
 - (void)provider:(CXProvider *)provider performAnswerCallAction:(CXAnswerCallAction *)action {
+    id<TwilioVoiceForeignCallDelegate> foreign = TVRNForeignOwnerOf(action.callUUID);
+    if (foreign) {
+        if ([foreign respondsToSelector:@selector(twilioVoiceProvider:performAnswerCallAction:)]) {
+            @try {
+                [foreign twilioVoiceProvider:provider performAnswerCallAction:action];
+            } @catch (NSException *exception) {
+                NSLog(@"[TwilioVoiceReactNative] Foreign delegate raised %@ on CXAnswerCallAction -- failing it", exception.name);
+                [action fail];
+            }
+        } else {
+            [action fail];
+        }
+        return;
+    }
+
     [self tvrn_prepareAudioDeviceForCallWithUuid:action.callUUID];
 
     BOOL succeeded = [self tvrn_performCallKitAction:action block:^{
@@ -471,6 +546,21 @@ NSString * const kTwilioVoiceReactNativeResourceBundleName = @"TwilioVoiceReactN
 }
 
 - (void)provider:(CXProvider *)provider performSetMutedCallAction:(CXSetMutedCallAction *)action {
+    id<TwilioVoiceForeignCallDelegate> foreign = TVRNForeignOwnerOf(action.callUUID);
+    if (foreign) {
+        if ([foreign respondsToSelector:@selector(twilioVoiceProvider:performSetMutedCallAction:)]) {
+            @try {
+                [foreign twilioVoiceProvider:provider performSetMutedCallAction:action];
+            } @catch (NSException *exception) {
+                NSLog(@"[TwilioVoiceReactNative] Foreign delegate raised %@ on CXSetMutedCallAction -- failing it", exception.name);
+                [action fail];
+            }
+        } else {
+            [action fail];
+        }
+        return;
+    }
+
     TVOCall *call = self.callMap[action.callUUID.UUIDString];
     if (!call) {
         [action fail];

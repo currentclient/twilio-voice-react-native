@@ -6,6 +6,7 @@
 //
 
 @import CallKit;
+@import AVFoundation;
 
 @class TVOCallInvite;
 @class TVOCancelledCallInvite;
@@ -20,6 +21,38 @@ FOUNDATION_EXPORT NSString * const kTwilioVoicePushRegistryNotificationCallInvit
 FOUNDATION_EXPORT NSString * const kTwilioVoicePushRegistryNotificationCancelledCallInviteReceived;
 FOUNDATION_EXPORT NSString * const kTwilioVoicePushRegistryNotificationCancelledCallInvite;
 FOUNDATION_EXPORT NSString * const kTwilioVoicePushRegistryNotificationCancelledCallInviteError;
+
+
+/// A second call stack that shares this process's one CXProvider and one
+/// PKPushRegistry with Twilio (PRO-8992: the SIP endpoint's push wake).
+///
+/// Apple allows ONE PushKit VoIP channel per app and kills an app that
+/// returns from a VoIP push without reporting a call, so the non-Twilio stack
+/// cannot own a registry or a provider of its own. Instead it registers here
+/// and is offered every VoIP push FIRST; whatever it claims never reaches
+/// TwilioVoiceSDK, and whatever it declines behaves exactly as before.
+///
+/// Every method is @optional and looked up with respondsToSelector: so the
+/// app can register a Swift object without linking against this pod.
+@protocol TwilioVoiceForeignCallDelegate <NSObject>
+@optional
+/// Offered on the PushKit queue (main) before Twilio parses the payload.
+/// Return YES ONLY after reporting an incoming call on `provider`
+/// synchronously, inside this call: the PushKit completion runs right after.
+- (BOOL)twilioVoiceHandleForeignVoIPPush:(NSDictionary *)payload provider:(CXProvider *)provider;
+/// Is `uuid` one of the foreign stack's CallKit calls? Every CXProvider
+/// action for such a call is routed to the methods below instead of Twilio.
+- (BOOL)twilioVoiceOwnsCallWithUUID:(NSUUID *)uuid;
+- (void)twilioVoiceProvider:(CXProvider *)provider performAnswerCallAction:(CXAnswerCallAction *)action;
+- (void)twilioVoiceProvider:(CXProvider *)provider performEndCallAction:(CXEndCallAction *)action;
+- (void)twilioVoiceProvider:(CXProvider *)provider performSetMutedCallAction:(CXSetMutedCallAction *)action;
+/// Audio-session hand-off. Offered first; return YES when the foreign stack
+/// has a live call that owns the session, in which case Twilio's audio
+/// device is left alone.
+- (BOOL)twilioVoiceProvider:(CXProvider *)provider didActivateAudioSession:(AVAudioSession *)audioSession;
+- (BOOL)twilioVoiceProvider:(CXProvider *)provider didDeactivateAudioSession:(AVAudioSession *)audioSession;
+- (void)twilioVoiceProviderDidReset:(CXProvider *)provider;
+@end
 
 @interface TwilioVoicePushRegistry : NSObject
 
@@ -37,5 +70,17 @@ FOUNDATION_EXPORT NSString * const kTwilioVoicePushRegistryNotificationCancelled
 /// NSNotificationCenter observer (cold-start race). Returns the invite and
 /// clears the static slot atomically. Returns nil if none is pending.
 + (TVOCallInvite *)claimPendingCallInvite;
+
+/// Register (or clear, with nil) the foreign call stack. Held strongly.
+/// Must be set before the first VoIP push is delivered; an app does this
+/// from application:didFinishLaunchingWithOptions:, which always runs before
+/// PushKit's first (asynchronous, main-queue) delivery. CallKit actions reach
+/// it through the RN module, which is the shared provider's delegate from
+/// native module init onwards (initializeCallKit, before the registry exists).
++ (void)setForeignCallDelegate:(id<TwilioVoiceForeignCallDelegate>)delegate;
++ (id<TwilioVoiceForeignCallDelegate>)foreignCallDelegate;
+
+/// YES when `uuid` belongs to the registered foreign stack.
++ (BOOL)foreignCallOwnsUUID:(NSUUID *)uuid;
 
 @end
