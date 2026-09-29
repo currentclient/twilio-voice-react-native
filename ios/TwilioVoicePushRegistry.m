@@ -41,6 +41,9 @@ static TVOCallInvite *sPendingCallInvite;
 // synchronous fallback in didReceiveIncomingPushWithPayload: below (PRO-5725).
 // Do not defer this with a timer: PushKit does not wait.
 static dispatch_block_t sPendingVoIPCompletion;
+// PRO-8992: the app's non-Twilio call stack (the SIP endpoint's push wake).
+// See TwilioVoiceForeignCallDelegate in the header.
+static id<TwilioVoiceForeignCallDelegate> sForeignCallDelegate;
 
 // Satisfies a pending PushKit completion by reporting a placeholder incoming call to CallKit
 // (required by iOS 13+ — every VoIP push must produce reportNewIncomingCall before completion()).
@@ -108,6 +111,28 @@ static void TVPRSatisfyPendingPushWithPlaceholder(NSString *handleValue, NSStrin
     }
 }
 
++ (void)setForeignCallDelegate:(id<TwilioVoiceForeignCallDelegate>)delegate {
+    sForeignCallDelegate = delegate;
+    NSLog(@"[TwilioVoicePushRegistry] Foreign call delegate %@", delegate ? @"registered" : @"cleared");
+}
+
++ (id<TwilioVoiceForeignCallDelegate>)foreignCallDelegate {
+    return sForeignCallDelegate;
+}
+
++ (BOOL)foreignCallOwnsUUID:(NSUUID *)uuid {
+    id<TwilioVoiceForeignCallDelegate> foreign = sForeignCallDelegate;
+    if (!uuid || !foreign || ![foreign respondsToSelector:@selector(twilioVoiceOwnsCallWithUUID:)]) {
+        return NO;
+    }
+    @try {
+        return [foreign twilioVoiceOwnsCallWithUUID:uuid];
+    } @catch (NSException *exception) {
+        NSLog(@"[TwilioVoicePushRegistry] Foreign delegate raised %@ answering ownership of %@ -- treating the call as Twilio's", exception.name, uuid.UUIDString);
+        return NO;
+    }
+}
+
 #pragma mark - TwilioVoicePushRegistry methods
 
 - (void)updatePushRegistry {
@@ -135,6 +160,30 @@ didReceiveIncomingPushWithPayload:(PKPushPayload *)payload
 withCompletionHandler:(void (^)(void))completion {
     if ([type isEqualToString:PKPushTypeVoIP]) {
         NSLog(@"[TwilioVoicePushRegistry] VoIP push received — handling notification directly in native code");
+
+        // PRO-8992: offer the push to the app's other call stack FIRST. A push
+        // it claims has already been reported to CallKit on the shared
+        // provider (that is the delegate's contract), so PushKit is satisfied
+        // and TwilioVoiceSDK never sees a payload that is not its own. A push
+        // it declines -- or a delegate that raises -- falls through to the
+        // unchanged Twilio path below, whose placeholder fallback still
+        // guarantees a report.
+        id<TwilioVoiceForeignCallDelegate> foreign = sForeignCallDelegate;
+        if (foreign && [foreign respondsToSelector:@selector(twilioVoiceHandleForeignVoIPPush:provider:)]) {
+            BOOL claimed = NO;
+            @try {
+                claimed = [foreign twilioVoiceHandleForeignVoIPPush:payload.dictionaryPayload
+                                                          provider:sSharedCallKitProvider];
+            } @catch (NSException *exception) {
+                NSLog(@"[TwilioVoicePushRegistry] Foreign delegate raised %@ (%@) on a VoIP push -- handing it to Twilio", exception.name, exception.reason);
+                claimed = NO;
+            }
+            if (claimed) {
+                NSLog(@"[TwilioVoicePushRegistry] VoIP push claimed by the foreign call delegate");
+                completion();
+                return;
+            }
+        }
 
         // Apple requires reportNewIncomingCall to be called before THIS METHOD
         // RETURNS — PushKit checks its internal "was a call reported" flag as
