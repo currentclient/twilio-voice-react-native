@@ -11,6 +11,7 @@ OutgoingCallMessage failure event listener. This should be the function signatur
 ```typescript
 type Failure = (error: TwilioError) => void;
 ```
+<b>References:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Remarks
 

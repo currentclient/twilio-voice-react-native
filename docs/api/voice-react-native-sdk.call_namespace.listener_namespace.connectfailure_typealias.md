@@ -11,6 +11,7 @@ Connect failure event listener. This should be the function signature of any eve
 ```typescript
 type ConnectFailure = (error: TwilioError) => void;
 ```
+<b>References:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Remarks
 

@@ -11,7 +11,7 @@ UserMediaErrors.PermissionDeniedError error. Error code `31401`<!-- -->.
 ```typescript
 class PermissionDeniedError extends TwilioError 
 ```
-<b>Extends:</b> TwilioError
+<b>Extends:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Constructors
 

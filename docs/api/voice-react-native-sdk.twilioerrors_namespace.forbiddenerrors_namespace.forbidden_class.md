@@ -11,7 +11,7 @@ ForbiddenErrors.Forbidden error. Error code `20403`<!-- -->.
 ```typescript
 class Forbidden extends TwilioError 
 ```
-<b>Extends:</b> TwilioError
+<b>Extends:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Constructors
 

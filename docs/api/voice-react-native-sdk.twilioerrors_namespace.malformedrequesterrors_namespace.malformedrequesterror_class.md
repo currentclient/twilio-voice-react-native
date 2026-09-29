@@ -11,7 +11,7 @@ MalformedRequestErrors.MalformedRequestError error. Error code `31100`<!-- -->.
 ```typescript
 class MalformedRequestError extends TwilioError 
 ```
-<b>Extends:</b> TwilioError
+<b>Extends:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Constructors
 

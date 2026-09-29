@@ -20,7 +20,7 @@ export class AudioDevice {
     // Warning: (ae-forgotten-export) The symbol "NativeAudioDeviceInfo" needs to be exported by the entry point index.d.ts
     //
     // @internal
-    constructor({ uuid, type, name }: NativeAudioDeviceInfo);
+    constructor(input: NativeAudioDeviceInfo);
     name: string;
     select(): Promise<void>;
     type: AudioDevice.Type;
@@ -209,7 +209,7 @@ export class Call extends EventEmitter {
     // Warning: (ae-forgotten-export) The symbol "NativeCallInfo" needs to be exported by the entry point index.d.ts
     //
     // @internal
-    constructor({ uuid, customParameters, from, sid, state, to, isMuted, isOnHold, initialConnectedTimestamp, }: NativeCallInfo);
+    constructor(input: NativeCallInfo);
     disconnect(): Promise<void>;
     getCustomParameters(): CustomParameters;
     getFrom(): string | undefined;
@@ -312,7 +312,7 @@ export class CallInvite extends EventEmitter {
     // Warning: (ae-forgotten-export) The symbol "NativeCallInviteInfo" needs to be exported by the entry point index.d.ts
     //
     // @internal
-    constructor({ uuid, callSid, customParameters, from, to }: NativeCallInviteInfo, state: CallInvite.State);
+    constructor(input: NativeCallInviteInfo, state: CallInvite.State);
     accept(options?: CallInvite.AcceptOptions): Promise<Call>;
     getCallSid(): string;
     getCustomParameters(): CustomParameters;
@@ -656,7 +656,7 @@ export interface OutgoingCallMessage {
 
 // @public
 export class OutgoingCallMessage extends IncomingCallMessage {
-    constructor({ content, contentType, messageType, voiceEventSid, }: NativeCallMessageInfo);
+    constructor(input: NativeCallMessageInfo);
 }
 
 // @public
@@ -1194,7 +1194,7 @@ export interface Voice {
 // @public
 export class Voice extends EventEmitter {
     constructor();
-    connect(token: string, { contactHandle, notificationDisplayName, params, }?: Voice.ConnectOptions): Promise<Call>;
+    connect(token: string, input?: Voice.ConnectOptions): Promise<Call>;
     getAudioDevices(): Promise<{
         audioDevices: AudioDevice[];
         selectedDevice?: AudioDevice;

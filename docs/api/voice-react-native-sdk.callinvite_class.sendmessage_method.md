@@ -20,7 +20,7 @@ sendMessage(message: CallMessage): Promise<OutgoingCallMessage>;
 
 <b>Returns:</b>
 
-Promise&lt;[OutgoingCallMessage](./voice-react-native-sdk.outgoingcallmessage_class.md)<!-- -->&gt;
+Promise&lt;OutgoingCallMessage&gt;
 
 A `Promise` that - Resolves with the OutgoingCallMessage object. - Rejects when the message is unable to be sent.
 

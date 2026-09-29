@@ -11,7 +11,7 @@ AuthorizationErrors.AccessTokenRejected error. Error code `51007`<!-- -->.
 ```typescript
 class AccessTokenRejected extends TwilioError 
 ```
-<b>Extends:</b> TwilioError
+<b>Extends:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Constructors
 

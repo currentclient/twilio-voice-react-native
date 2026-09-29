@@ -11,7 +11,7 @@ Error describing that the an unsupported platform other than Android or iOS has 
 ```typescript
 export declare class UnsupportedPlatformError extends TwilioError 
 ```
-<b>Extends:</b> TwilioError
+<b>Extends:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Constructors
 

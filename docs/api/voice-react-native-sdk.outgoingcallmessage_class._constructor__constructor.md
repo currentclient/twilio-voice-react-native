@@ -9,12 +9,13 @@ Constructs a new instance of the `OutgoingCallMessage` class
 <b>Signature:</b>
 
 ```typescript
-constructor({ content, contentType, messageType, voiceEventSid, }: NativeCallMessageInfo);
+constructor(input: NativeCallMessageInfo);
 ```
 
 ## Parameters
 
 |  Parameter | Type | Description |
 |  --- | --- | --- |
-|  { content, contentType, messageType, voiceEventSid, } | NativeCallMessageInfo |  |
+|  { content, contentType, messageType, voiceEventSid, } | (not declared) |  |
+|  input | NativeCallMessageInfo |  |
 

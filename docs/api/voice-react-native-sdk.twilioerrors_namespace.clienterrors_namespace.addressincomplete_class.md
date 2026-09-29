@@ -11,7 +11,7 @@ ClientErrors.AddressIncomplete error. Error code `31484`<!-- -->.
 ```typescript
 class AddressIncomplete extends TwilioError 
 ```
-<b>Extends:</b> TwilioError
+<b>Extends:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Constructors
 

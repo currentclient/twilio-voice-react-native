@@ -11,7 +11,7 @@ SignalingErrors.ConnectionDisconnected error. Error code `53001`<!-- -->.
 ```typescript
 class ConnectionDisconnected extends TwilioError 
 ```
-<b>Extends:</b> TwilioError
+<b>Extends:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Constructors
 

@@ -11,7 +11,7 @@ SIPServerErrors.Decline error. Error code `31603`<!-- -->.
 ```typescript
 class Decline extends TwilioError 
 ```
-<b>Extends:</b> TwilioError
+<b>Extends:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Constructors
 

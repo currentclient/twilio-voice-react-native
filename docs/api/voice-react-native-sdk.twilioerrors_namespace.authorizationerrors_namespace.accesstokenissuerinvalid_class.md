@@ -11,7 +11,7 @@ AuthorizationErrors.AccessTokenIssuerInvalid error. Error code `20103`<!-- -->.
 ```typescript
 class AccessTokenIssuerInvalid extends TwilioError 
 ```
-<b>Extends:</b> TwilioError
+<b>Extends:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Constructors
 

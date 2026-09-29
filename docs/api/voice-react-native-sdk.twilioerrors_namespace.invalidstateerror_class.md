@@ -11,7 +11,7 @@ Error describing that the SDK has entered or is attempting to enter an invalid s
 ```typescript
 export declare class InvalidStateError extends TwilioError 
 ```
-<b>Extends:</b> TwilioError
+<b>Extends:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Constructors
 

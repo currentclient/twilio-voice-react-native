@@ -25,7 +25,7 @@ runPreflight(accessToken: string, options?: PreflightTest.Options): Promise<Pref
 
 <b>Returns:</b>
 
-Promise&lt;[PreflightTest](./voice-react-native-sdk.preflighttest_class.md)<!-- -->&gt;
+Promise&lt;PreflightTest&gt;
 
 A Promise that: - Resolves with a [PreflightTest](./voice-react-native-sdk.preflighttest_class.md) object. - Rejects with a [TwilioErrors](./voice-react-native-sdk.twilioerrors_namespace.md) if unable to perform a [PreflightTest](./voice-react-native-sdk.preflighttest_class.md)<!-- -->.
 

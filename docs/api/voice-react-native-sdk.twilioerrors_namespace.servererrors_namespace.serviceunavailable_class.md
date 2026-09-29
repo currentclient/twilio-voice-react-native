@@ -11,7 +11,7 @@ ServerErrors.ServiceUnavailable error. Error code `31503`<!-- -->.
 ```typescript
 class ServiceUnavailable extends TwilioError 
 ```
-<b>Extends:</b> TwilioError
+<b>Extends:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Constructors
 

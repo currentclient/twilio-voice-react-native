@@ -13,7 +13,7 @@ getCalls(): Promise<ReadonlyMap<Uuid, Call>>;
 ```
 <b>Returns:</b>
 
-Promise&lt;ReadonlyMap&lt;Uuid, [Call](./voice-react-native-sdk.call_class.md)<!-- -->&gt;&gt;
+Promise&lt;ReadonlyMap&lt;Uuid, Call&gt;&gt;
 
 A `Promise` that - Resolves with a mapping of `Uuid`<!-- -->s to [Call](./voice-react-native-sdk.call_class.md)<!-- -->s.
 

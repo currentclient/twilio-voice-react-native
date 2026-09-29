@@ -11,7 +11,7 @@ ClientErrors.Conflict error. Error code `31409`<!-- -->.
 ```typescript
 class Conflict extends TwilioError 
 ```
-<b>Extends:</b> TwilioError
+<b>Extends:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Constructors
 

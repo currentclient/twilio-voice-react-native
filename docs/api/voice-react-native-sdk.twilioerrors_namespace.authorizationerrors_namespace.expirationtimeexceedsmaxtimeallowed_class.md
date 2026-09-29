@@ -11,7 +11,7 @@ AuthorizationErrors.ExpirationTimeExceedsMaxTimeAllowed error. Error code `20157
 ```typescript
 class ExpirationTimeExceedsMaxTimeAllowed extends TwilioError 
 ```
-<b>Extends:</b> TwilioError
+<b>Extends:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Constructors
 

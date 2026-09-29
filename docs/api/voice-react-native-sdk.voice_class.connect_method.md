@@ -9,7 +9,7 @@ Create an outgoing call.
 <b>Signature:</b>
 
 ```typescript
-connect(token: string, { contactHandle, notificationDisplayName, params, }?: Voice.ConnectOptions): Promise<Call>;
+connect(token: string, input?: Voice.ConnectOptions): Promise<Call>;
 ```
 
 ## Parameters
@@ -17,11 +17,12 @@ connect(token: string, { contactHandle, notificationDisplayName, params, }?: Voi
 |  Parameter | Type | Description |
 |  --- | --- | --- |
 |  token | string | A Twilio Access Token, usually minted by an authentication-gated endpoint using a Twilio helper library. |
-|  { contactHandle, notificationDisplayName, params, } | [Voice.ConnectOptions](./voice-react-native-sdk.voice_namespace.connectoptions_typealias.md) | <i>(Optional)</i> |
+|  { contactHandle, notificationDisplayName, params, } | (not declared) | <i>(Optional)</i> |
+|  input | [Voice.ConnectOptions](./voice-react-native-sdk.voice_namespace.connectoptions_typealias.md) | <i>(Optional)</i> |
 
 <b>Returns:</b>
 
-Promise&lt;[Call](./voice-react-native-sdk.call_class.md)<!-- -->&gt;
+Promise&lt;Call&gt;
 
 A `Promise` that - Resolves with a call when the call is created. - Rejects: \* When a call is not able to be created on the native layer. \* With an [TwilioErrors.InvalidArgumentError](./voice-react-native-sdk.twilioerrors_namespace.invalidargumenterror_class.md) when invalid arguments are passed.
 

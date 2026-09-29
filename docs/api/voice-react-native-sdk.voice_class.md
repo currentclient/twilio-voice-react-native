@@ -43,7 +43,7 @@ voice.register(token);
 
 |  Method | Modifiers | Description |
 |  --- | --- | --- |
-|  [connect(token, { contactHandle, notificationDisplayName, params, })](./voice-react-native-sdk.voice_class.connect_method.md) |  | Create an outgoing call. |
+|  [connect(token, { contactHandle, notificationDisplayName, params, }, input)](./voice-react-native-sdk.voice_class.connect_method.md) |  | Create an outgoing call. |
 |  [getAudioDevices()](./voice-react-native-sdk.voice_class.getaudiodevices_method.md) |  | Get audio device information from the native layer. |
 |  [getCallInvites()](./voice-react-native-sdk.voice_class.getcallinvites_method.md) |  | Get a list of pending call invites. |
 |  [getCalls()](./voice-react-native-sdk.voice_class.getcalls_method.md) |  | Get a list of existing calls, ongoing and pending. This will not return any call that has finished. |

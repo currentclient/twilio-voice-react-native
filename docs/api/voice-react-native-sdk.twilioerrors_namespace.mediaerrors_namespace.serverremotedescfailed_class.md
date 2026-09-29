@@ -11,7 +11,7 @@ MediaErrors.ServerRemoteDescFailed error. Error code `53403`<!-- -->.
 ```typescript
 class ServerRemoteDescFailed extends TwilioError 
 ```
-<b>Extends:</b> TwilioError
+<b>Extends:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Constructors
 

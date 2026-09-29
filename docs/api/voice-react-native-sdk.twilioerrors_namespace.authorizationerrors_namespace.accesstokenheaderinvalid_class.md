@@ -11,7 +11,7 @@ AuthorizationErrors.AccessTokenHeaderInvalid error. Error code `20102`<!-- -->.
 ```typescript
 class AccessTokenHeaderInvalid extends TwilioError 
 ```
-<b>Extends:</b> TwilioError
+<b>Extends:</b> [TwilioError](./voice-react-native-sdk.twilioerrors_namespace.twilioerror_class.md)
 
 ## Constructors
 
