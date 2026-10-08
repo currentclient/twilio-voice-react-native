@@ -46,6 +46,13 @@ FOUNDATION_EXPORT NSString * const kTwilioVoicePushRegistryNotificationCancelled
 - (void)twilioVoiceProvider:(CXProvider *)provider performAnswerCallAction:(CXAnswerCallAction *)action;
 - (void)twilioVoiceProvider:(CXProvider *)provider performEndCallAction:(CXEndCallAction *)action;
 - (void)twilioVoiceProvider:(CXProvider *)provider performSetMutedCallAction:(CXSetMutedCallAction *)action;
+/// PRO-10332: the foreign stack reports its OUTGOING calls and live-socket
+/// incoming calls on this provider too, so start, hold and DTMF reach it the
+/// same way. A start action is routed only when the foreign stack claimed the
+/// UUID before requesting the transaction (twilioVoiceOwnsCallWithUUID:).
+- (void)twilioVoiceProvider:(CXProvider *)provider performStartCallAction:(CXStartCallAction *)action;
+- (void)twilioVoiceProvider:(CXProvider *)provider performSetHeldCallAction:(CXSetHeldCallAction *)action;
+- (void)twilioVoiceProvider:(CXProvider *)provider performPlayDTMFCallAction:(CXPlayDTMFCallAction *)action;
 /// Audio-session hand-off. Offered first; return YES when the foreign stack
 /// has a live call that owns the session, in which case Twilio's audio
 /// device is left alone.
