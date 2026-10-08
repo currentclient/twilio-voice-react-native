@@ -90,4 +90,10 @@ FOUNDATION_EXPORT NSString * const kTwilioVoicePushRegistryNotificationCancelled
 /// YES when `uuid` belongs to the registered foreign stack.
 + (BOOL)foreignCallOwnsUUID:(NSUUID *)uuid;
 
+/// Which CallKit actions reach the foreign delegate, so the foreign stack can
+/// tell a fork that routes them from one that does not (it probes by
+/// selector). 1: answer, end, setMuted, the audio session and reset
+/// (PRO-8992). 2: also start, setHeld and playDTMF (PRO-10332).
++ (NSInteger)foreignCallRoutingVersion;
+
 @end
