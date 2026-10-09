@@ -46,6 +46,13 @@ FOUNDATION_EXPORT NSString * const kTwilioVoicePushRegistryNotificationCancelled
 - (void)twilioVoiceProvider:(CXProvider *)provider performAnswerCallAction:(CXAnswerCallAction *)action;
 - (void)twilioVoiceProvider:(CXProvider *)provider performEndCallAction:(CXEndCallAction *)action;
 - (void)twilioVoiceProvider:(CXProvider *)provider performSetMutedCallAction:(CXSetMutedCallAction *)action;
+/// PRO-10332: the foreign stack reports its OUTGOING calls and live-socket
+/// incoming calls on this provider too, so start, hold and DTMF reach it the
+/// same way. A start action is routed only when the foreign stack claimed the
+/// UUID before requesting the transaction (twilioVoiceOwnsCallWithUUID:).
+- (void)twilioVoiceProvider:(CXProvider *)provider performStartCallAction:(CXStartCallAction *)action;
+- (void)twilioVoiceProvider:(CXProvider *)provider performSetHeldCallAction:(CXSetHeldCallAction *)action;
+- (void)twilioVoiceProvider:(CXProvider *)provider performPlayDTMFCallAction:(CXPlayDTMFCallAction *)action;
 /// Audio-session hand-off. Offered first; return YES when the foreign stack
 /// has a live call that owns the session, in which case Twilio's audio
 /// device is left alone.
@@ -82,5 +89,11 @@ FOUNDATION_EXPORT NSString * const kTwilioVoicePushRegistryNotificationCancelled
 
 /// YES when `uuid` belongs to the registered foreign stack.
 + (BOOL)foreignCallOwnsUUID:(NSUUID *)uuid;
+
+/// Which CallKit actions reach the foreign delegate, so the foreign stack can
+/// tell a fork that routes them from one that does not (it probes by
+/// selector). 1: answer, end, setMuted, the audio session and reset
+/// (PRO-8992). 2: also start, setHeld and playDTMF (PRO-10332).
++ (NSInteger)foreignCallRoutingVersion;
 
 @end

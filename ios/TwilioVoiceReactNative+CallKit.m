@@ -9,6 +9,7 @@
 @import TwilioVoice;
 
 #import <React/RCTLog.h>
+#import <objc/message.h>
 
 #import "TwilioVoiceReactNative.h"
 #import "TwilioVoiceReactNativeConstants.h"
@@ -297,6 +298,30 @@ static id<TwilioVoiceForeignCallDelegate> TVRNForeignOwnerOf(NSUUID *uuid) {
     return [TwilioVoicePushRegistry foreignCallDelegate];
 }
 
+// Hand `action` to the foreign stack when it owns the call (PRO-10332).
+// Returns YES when the action was the foreign stack's to settle -- including
+// when it lacks `selector` or raises, in which case the action is failed here
+// so CallKit never waits on it. NO means the call is Twilio's.
+static BOOL TVRNRouteActionToForeign(CXProvider *provider, CXCallAction *action, SEL selector) {
+    id<TwilioVoiceForeignCallDelegate> foreign = TVRNForeignOwnerOf(action.callUUID);
+    if (!foreign) {
+        return NO;
+    }
+    if (![foreign respondsToSelector:selector]) {
+        [action fail];
+        return YES;
+    }
+    @try {
+        // The three routed selectors share the (provider, action) -> void shape.
+        void (*send)(id, SEL, CXProvider *, CXCallAction *) = (void *)objc_msgSend;
+        send(foreign, selector, provider, action);
+    } @catch (NSException *exception) {
+        NSLog(@"[TwilioVoiceReactNative] Foreign delegate raised %@ on %@ -- failing it", exception.name, NSStringFromClass([action class]));
+        [action fail];
+    }
+    return YES;
+}
+
 // Offer an audio-session transition to the foreign stack. YES means it owns
 // the session right now and the shared Twilio audio device must be left alone.
 static BOOL TVRNForeignClaimsAudioSession(CXProvider *provider, AVAudioSession *audioSession, BOOL activated) {
@@ -474,6 +499,10 @@ static BOOL TVRNForeignClaimsAudioSession(CXProvider *provider, AVAudioSession *
 }
 
 - (void)provider:(CXProvider *)provider performStartCallAction:(CXStartCallAction *)action {
+    if (TVRNRouteActionToForeign(provider, action, @selector(twilioVoiceProvider:performStartCallAction:))) {
+        return;
+    }
+
     [self tvrn_prepareAudioDeviceForCallWithUuid:action.callUUID];
 
     [self.callKitProvider reportOutgoingCallWithUUID:action.callUUID startedConnectingAtDate:[NSDate date]];
@@ -530,6 +559,10 @@ static BOOL TVRNForeignClaimsAudioSession(CXProvider *provider, AVAudioSession *
 }
 
 - (void)provider:(CXProvider *)provider performSetHeldCallAction:(CXSetHeldCallAction *)action {
+    if (TVRNRouteActionToForeign(provider, action, @selector(twilioVoiceProvider:performSetHeldCallAction:))) {
+        return;
+    }
+
     TVOCall *call = self.callMap[action.callUUID.UUIDString];
     if (!call) {
         [action fail];
@@ -577,6 +610,10 @@ static BOOL TVRNForeignClaimsAudioSession(CXProvider *provider, AVAudioSession *
 }
 
 - (void)provider:(CXProvider *)provider performPlayDTMFCallAction:(CXPlayDTMFCallAction *)action {
+    if (TVRNRouteActionToForeign(provider, action, @selector(twilioVoiceProvider:performPlayDTMFCallAction:))) {
+        return;
+    }
+
     TVOCall *call = self.callMap[action.callUUID.UUIDString];
     if (!call) {
         [action fail];

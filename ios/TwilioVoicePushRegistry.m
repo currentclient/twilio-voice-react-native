@@ -120,6 +120,10 @@ static void TVPRSatisfyPendingPushWithPlaceholder(NSString *handleValue, NSStrin
     return sForeignCallDelegate;
 }
 
++ (NSInteger)foreignCallRoutingVersion {
+  return 2;
+}
+
 + (BOOL)foreignCallOwnsUUID:(NSUUID *)uuid {
     id<TwilioVoiceForeignCallDelegate> foreign = sForeignCallDelegate;
     if (!uuid || !foreign || ![foreign respondsToSelector:@selector(twilioVoiceOwnsCallWithUUID:)]) {
