@@ -1,3 +1,50 @@
 {
-  "$schema": "https://docs.renovatebot.com/renovate-schema.json"
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "packageRules": [
+    {
+      "description": "Held below 7.59: 7.59.x needs Node >= 20.9 and CI runs cimg/node:18.20.8. Patches still flow.",
+      "matchPackageNames": ["@microsoft/api-extractor"],
+      "allowedVersions": "<7.59.0"
+    },
+    {
+      "description": "Held at 1.12.x: android/build.gradle has compileSdk 34 and AGP 7.4.2, and newer androidx.core needs a raise.",
+      "matchPackageNames": ["androidx.core:core"],
+      "allowedVersions": "<1.13.0"
+    },
+    {
+      "description": "Held at 1.1.x: android/build.gradle has compileSdk 34 and AGP 7.4.2, and newer material needs a raise.",
+      "matchPackageNames": ["com.google.android.material:material"],
+      "allowedVersions": "<1.2.0"
+    },
+    {
+      "description": "Held on the 0.72 line: React Native toolchain migration, not a dependency-hygiene job.",
+      "matchPackageNames": ["react-native"],
+      "allowedVersions": "<0.73.0"
+    },
+    {
+      "description": "Held on ^0.18: React Native toolchain migration, not a dependency-hygiene job.",
+      "matchPackageNames": ["react-native-builder-bob"],
+      "allowedVersions": "<0.19.0"
+    },
+    {
+      "description": "Held on the 0.62 line: React Native toolchain migration, not a dependency-hygiene job.",
+      "matchPackageNames": ["@types/react-native"],
+      "allowedVersions": "<0.63.0"
+    },
+    {
+      "description": "Held on the 0.76 line: React Native toolchain migration, not a dependency-hygiene job.",
+      "matchPackageNames": ["metro-react-native-babel-preset"],
+      "allowedVersions": "<0.77.0"
+    },
+    {
+      "description": "Held on 4.x as pinned: toolchain migration churn, not a dependency-hygiene job.",
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "<5.0.0"
+    },
+    {
+      "description": "Held on 2.x as pinned: 3.x reformats the codebase, which is churn, not dependency hygiene.",
+      "matchPackageNames": ["prettier"],
+      "allowedVersions": "<3.0.0"
+    }
+  ]
 }
