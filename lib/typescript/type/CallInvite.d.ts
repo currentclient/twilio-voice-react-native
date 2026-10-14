@@ -37,4 +37,4 @@ export interface NativeCallInviteMessageReceivedEvent extends BaseNativeCallInvi
     type: Constants.CallEventMessageReceived;
     [Constants.CallMessage]: NativeCallMessageInfo;
 }
-export declare type NativeCallInviteEvent = NativeCallInviteNotificationTappedEvent | NativeCallInviteAcceptedEvent | NativeCallInviteRejectedEvent | NativeCallInviteCancelledEvent | NativeCallInviteMessageReceivedEvent;
+export type NativeCallInviteEvent = NativeCallInviteNotificationTappedEvent | NativeCallInviteAcceptedEvent | NativeCallInviteRejectedEvent | NativeCallInviteCancelledEvent | NativeCallInviteMessageReceivedEvent;

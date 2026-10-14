@@ -9,7 +9,7 @@ Call custom parameters. If custom parameters are present for a call, then it wil
 <b>Signature:</b>
 
 ```typescript
-export declare type CustomParameters = Record<string, string>;
+export type CustomParameters = Record<string, string>;
 ```
 
 ## Remarks

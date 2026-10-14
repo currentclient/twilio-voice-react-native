@@ -9,7 +9,7 @@ Configuration to use the PCMU audio codec.
 <b>Signature:</b>
 
 ```typescript
-export declare type PCMUAudioCodec = {
+export type PCMUAudioCodec = {
     [Constants.AudioCodecKeyType]: AudioCodecType.PCMU;
 };
 ```

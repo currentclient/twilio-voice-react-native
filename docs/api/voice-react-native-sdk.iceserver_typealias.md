@@ -9,7 +9,7 @@ Ice server configuration.
 <b>Signature:</b>
 
 ```typescript
-export declare type IceServer = Partial<{
+export type IceServer = Partial<{
     [Constants.IceServerKeyPassword]: string;
     [Constants.IceServerKeyServerUrl]: string;
     [Constants.IceServerKeyUsername]: string;

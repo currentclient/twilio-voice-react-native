@@ -25,4 +25,4 @@ export interface NativeEventQualityWarning extends NativeEventBase {
     [Constants.PreflightTestQualityWarningEventKeyCurrentWarnings]: NativeCallQualityWarnings;
     [Constants.PreflightTestQualityWarningEventKeyPreviousWarnings]: NativeCallQualityWarnings;
 }
-export declare type NativeEvent = NativeEventConnected | NativeEventCompleted | NativeEventFailed | NativeEventSample | NativeEventQualityWarning;
+export type NativeEvent = NativeEventConnected | NativeEventCompleted | NativeEventFailed | NativeEventSample | NativeEventQualityWarning;

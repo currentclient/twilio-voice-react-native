@@ -261,7 +261,7 @@ export function useCallInvites(
             removeCallInvite(callInvite.getCallSid());
             try {
               await callInvite.accept();
-            } catch (err) {
+            } catch (err: any) {
               const message = err.message;
               const code = err.code;
               logEvent(
@@ -382,7 +382,7 @@ export function useVoice(token: string) {
           },
         });
         callHandler(call);
-      } catch (err) {
+      } catch (err: any) {
         const message = err.message;
         const code = err.code;
         logEvent(
@@ -437,7 +437,7 @@ export function useVoice(token: string) {
       );
 
       setPreflightTest(() => _preflightTest);
-    } catch (error) {
+    } catch (error: any) {
       logEvent(`preflight test error ${
         JSON.stringify(error)
       }; message: "${
