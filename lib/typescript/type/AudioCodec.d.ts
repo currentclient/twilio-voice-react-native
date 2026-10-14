@@ -15,7 +15,7 @@ export declare enum AudioCodecType {
 /**
  * Configuration to use the Opus audio codec.
  */
-export declare type OpusAudioCodec = {
+export type OpusAudioCodec = {
     /**
      * The type of the Opus audio codec.
      */
@@ -29,7 +29,7 @@ export declare type OpusAudioCodec = {
 /**
  * Configuration to use the PCMU audio codec.
  */
-export declare type PCMUAudioCodec = {
+export type PCMUAudioCodec = {
     /**
      * The type of the PCMU audio codec.
      */
@@ -38,4 +38,4 @@ export declare type PCMUAudioCodec = {
 /**
  * The type of an audio codec.
  */
-export declare type AudioCodec = OpusAudioCodec | PCMUAudioCodec;
+export type AudioCodec = OpusAudioCodec | PCMUAudioCodec;

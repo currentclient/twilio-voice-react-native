@@ -15,7 +15,7 @@ export declare enum IceTransportPolicy {
 /**
  * Ice server configuration.
  */
-export declare type IceServer = Partial<{
+export type IceServer = Partial<{
     [Constants.IceServerKeyPassword]: string;
     [Constants.IceServerKeyServerUrl]: string;
     [Constants.IceServerKeyUsername]: string;

@@ -9,7 +9,7 @@ Configuration to use the Opus audio codec.
 <b>Signature:</b>
 
 ```typescript
-export declare type OpusAudioCodec = {
+export type OpusAudioCodec = {
     [Constants.AudioCodecKeyType]: AudioCodecType.Opus;
     [Constants.AudioCodecOpusKeyMaxAverageBitrate]?: number;
 };

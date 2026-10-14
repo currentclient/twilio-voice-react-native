@@ -16,5 +16,5 @@ export interface NativeCallMessageFailureEvent extends NativeCallMessageEventBas
 export interface NativeCallMessageSentEvent extends NativeCallMessageEventBase {
     type: Constants.CallEventMessageSent;
 }
-export declare type NativeCallMessageEvent = NativeCallMessageFailureEvent | NativeCallMessageSentEvent;
-export declare type NativeCallMessageEventType = Constants.CallEventMessageFailure | Constants.CallEventMessageSent;
+export type NativeCallMessageEvent = NativeCallMessageFailureEvent | NativeCallMessageSentEvent;
+export type NativeCallMessageEventType = Constants.CallEventMessageFailure | Constants.CallEventMessageSent;

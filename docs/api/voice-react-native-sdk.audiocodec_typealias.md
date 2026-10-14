@@ -9,7 +9,7 @@ The type of an audio codec.
 <b>Signature:</b>
 
 ```typescript
-export declare type AudioCodec = OpusAudioCodec | PCMUAudioCodec;
+export type AudioCodec = OpusAudioCodec | PCMUAudioCodec;
 ```
 <b>References:</b> [OpusAudioCodec](./voice-react-native-sdk.opusaudiocodec_typealias.md)<!-- -->, [PCMUAudioCodec](./voice-react-native-sdk.pcmuaudiocodec_typealias.md)
 
