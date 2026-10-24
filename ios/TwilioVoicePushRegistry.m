@@ -347,6 +347,23 @@ withCompletionHandler:(void (^)(void))completion {
         TVPRSatisfyPendingPushWithPlaceholder(cancelledCallInvite.from, @"cancel push");
     }
 
+    // PRO-10252: end the CallKit call here too when this invite is still the
+    // one parked for the RN module. A VoIP push can wake a suspended or killed
+    // app before the RN module exists; the cancel then lands on a notification
+    // with no observer, nothing ends the call reported above, and the phone keeps
+    // ringing after another device answered. The module later claims that stale
+    // invite as if it were live. Ending an already-ended UUID is a no-op, so
+    // this is safe when the module also handles the cancel.
+    TVOCallInvite *parked = sPendingCallInvite;
+    if (parked && cancelledCallInvite.callSid.length > 0 &&
+        [parked.callSid isEqualToString:cancelledCallInvite.callSid]) {
+        NSLog(@"[TwilioVoicePushRegistry] Cancel for the parked invite (callSid: %@) -- ending its CallKit call", parked.callSid);
+        sPendingCallInvite = nil;
+        [sSharedCallKitProvider reportCallWithUUID:parked.uuid
+                                       endedAtDate:[NSDate date]
+                                            reason:CXCallEndedReasonRemoteEnded];
+    }
+
     // Notify the RN module so it can match the cancelled invite, clean up, and
     // emit the JS event.
     NSMutableDictionary *userInfo = [@{
