@@ -790,6 +790,29 @@ export class Voice extends EventEmitter {
   }
 
   /**
+   * Records a labelled snapshot of the iOS audio session (category, mode,
+   * whether the Twilio audio device is enabled) in the native audio-session
+   * timeline. iOS only; resolves without doing anything on Android.
+   */
+  async recordAudioSessionSnapshot(
+    label: string,
+    callUuid?: string
+  ): Promise<void> {
+    if (Platform.OS !== 'ios') return;
+    await NativeModule.voice_recordAudioSessionSnapshot(label, callUuid ?? '');
+  }
+
+  /**
+   * Returns the native audio-session timeline (`prepare`, `didActivate`,
+   * `didDeactivate`, `connected`, `connected-without-didActivate`, ...), oldest
+   * first. iOS only; resolves `[]` on Android.
+   */
+  async getAudioSessionTimeline(): Promise<Voice.AudioSessionEvent[]> {
+    if (Platform.OS !== 'ios') return [];
+    return NativeModule.voice_getAudioSessionTimeline();
+  }
+
+  /**
    * Starts a PreflightTest.
    *
    * The PreflightTest allows you to anticipate and troubleshoot end users'
@@ -898,6 +921,24 @@ export class Voice extends EventEmitter {
  * @public
  */
 export namespace Voice {
+  /**
+   * One entry in the native iOS audio-session timeline.
+   */
+  export interface AudioSessionEvent {
+    event: string;
+    /** Epoch milliseconds. */
+    timestamp: number;
+    /** `TVODefaultAudioDevice.enabled` at that moment. */
+    enabled: boolean;
+    /** `AVAudioSession` category at that moment. */
+    category: string;
+    /** `AVAudioSession` mode at that moment. */
+    mode: string;
+    categoryOptions: number;
+    otherAudioPlaying: boolean;
+    callUuid?: string;
+  }
+
   /**
    * Options to pass to the {@link (Voice:class).connect} method.
    */

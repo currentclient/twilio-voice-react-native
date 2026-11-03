@@ -392,6 +392,62 @@ static BOOL TVRNForeignClaimsAudioSession(CXProvider *provider, AVAudioSession *
     return NO;
 }
 
+// --- Audio-session timeline (PRO-12171) ---------------------------------
+// "Connected but dead air both ways" is the signature of CallKit never calling
+// provider:didActivateAudioSession: for a call whose device we disabled in
+// tvrn_prepareAudioDeviceForCallWithUuid:. JS cannot see that layer, so every
+// step that touches the shared audio device is recorded here (capped ring) and
+// read back through voice_getAudioSessionTimeline into the call report.
+// Diagnostic only: nothing below changes `enabled` or the session.
+static NSMutableArray<NSDictionary *> *TVRNAudioTimeline(void) {
+    static NSMutableArray *timeline;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ timeline = [NSMutableArray array]; });
+    return timeline;
+}
+static NSMutableDictionary<NSString *, NSNumber *> *TVRNPrepareTimes(void) {
+    static NSMutableDictionary *times;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ times = [NSMutableDictionary dictionary]; });
+    return times;
+}
+static double TVRNLastDidActivateMs = 0;
+static NSUInteger const TVRNAudioTimelineCap = 200;
+static NSTimeInterval const TVRNActivationGraceSeconds = 3.0;
+
+static double TVRNNowMs(void) {
+    return round([[NSDate date] timeIntervalSince1970] * 1000.0);
+}
+
+void TVRNRecordAudioEvent(NSString *event, NSString *callUuid) {
+    AVAudioSession *session = [AVAudioSession sharedInstance];
+    NSMutableDictionary *entry = [@{
+        @"event": event,
+        @"timestamp": @(TVRNNowMs()),
+        @"enabled": @([TwilioVoiceReactNative twilioAudioDevice].enabled),
+        @"category": session.category ?: @"",
+        @"mode": session.mode ?: @"",
+        @"categoryOptions": @(session.categoryOptions),
+        @"otherAudioPlaying": @(session.isOtherAudioPlaying),
+    } mutableCopy];
+    if (callUuid) {
+        entry[@"callUuid"] = callUuid;
+    }
+    NSLog(@"[TwilioVoiceReactNative] audio-session %@", entry);
+    @synchronized (TVRNAudioTimeline()) {
+        [TVRNAudioTimeline() addObject:entry];
+        if (TVRNAudioTimeline().count > TVRNAudioTimelineCap) {
+            [TVRNAudioTimeline() removeObjectAtIndex:0];
+        }
+    }
+}
+
+NSArray<NSDictionary *> *TVRNAudioTimelineSnapshot(void) {
+    @synchronized (TVRNAudioTimeline()) {
+        return [TVRNAudioTimeline() copy];
+    }
+}
+
 // Reset the shared audio device ahead of a new call's CallKit audio session
 // activation. TVODefaultAudioDevice is ONE process-wide instance that carries
 // the audio for every call, so disabling it and re-running its setup block
@@ -400,12 +456,22 @@ static BOOL TVRNForeignClaimsAudioSession(CXProvider *provider, AVAudioSession *
 // an already-active session, nothing sets `enabled` back to YES. Only reset it
 // when this is the only call.
 - (void)tvrn_prepareAudioDeviceForCallWithUuid:(NSUUID *)uuid {
+    TVRNRecordAudioEvent(@"prepare", uuid.UUIDString);
     if ([self tvrn_hasOtherLiveCallExcludingUuid:uuid]) {
         RCTLogWarn(@"[TwilioVoiceReactNative] Another call is live -- leaving the shared audio device enabled for call %@.", uuid.UUIDString);
         return;
     }
+    // Only a call whose device was actually reset can be waiting on a fresh
+    // didActivate; a call-waiting call (early return above) rides the live one.
+    @synchronized (TVRNPrepareTimes()) {
+        if (TVRNPrepareTimes().count > 50) {
+            [TVRNPrepareTimes() removeAllObjects];
+        }
+        TVRNPrepareTimes()[uuid.UUIDString] = @(TVRNNowMs());
+    }
     [TwilioVoiceReactNative twilioAudioDevice].enabled = NO;
     [TwilioVoiceReactNative twilioAudioDevice].block();
+    TVRNRecordAudioEvent(@"device-reset", uuid.UUIDString);
 }
 
 // Invoke and drop the CallKit completion handler that belongs to `uuid`.
@@ -428,6 +494,7 @@ static BOOL TVRNForeignClaimsAudioSession(CXProvider *provider, AVAudioSession *
     }
 
     [TwilioVoiceReactNative twilioAudioDevice].enabled = NO;
+    TVRNRecordAudioEvent(@"providerDidReset", nil);
 
     // The only path that reaches "ringback starts and never stops". A reset
     // orphans the TVOCall, so no didDisconnect fires and callDisconnected: --
@@ -452,6 +519,8 @@ static BOOL TVRNForeignClaimsAudioSession(CXProvider *provider, AVAudioSession *
         return;
     }
     [TwilioVoiceReactNative twilioAudioDevice].enabled = YES;
+    TVRNLastDidActivateMs = TVRNNowMs();
+    TVRNRecordAudioEvent(@"didActivate", nil);
 }
 
 - (void)provider:(CXProvider *)provider didDeactivateAudioSession:(AVAudioSession *)audioSession {
@@ -459,6 +528,7 @@ static BOOL TVRNForeignClaimsAudioSession(CXProvider *provider, AVAudioSession *
         return;
     }
     [TwilioVoiceReactNative twilioAudioDevice].enabled = NO;
+    TVRNRecordAudioEvent(@"didDeactivate", nil);
 }
 
 - (void)provider:(CXProvider *)provider performEndCallAction:(CXEndCallAction *)action {
@@ -649,6 +719,38 @@ static BOOL TVRNForeignClaimsAudioSession(CXProvider *provider, AVAudioSession *
                               kTwilioVoiceReactNativeEventKeyCall: [self callInfo:call]}];
 
     [self tvrn_completeCallKitCallbackForUuid:call.uuid success:YES];
+
+    [self tvrn_watchForMissedActivationOnCall:call];
+}
+
+// Log-only (PRO-12171): a call that reached Connected but never saw
+// provider:didActivateAudioSession: since its audio device was prepared is the
+// suspected dead-air case. Record it after a grace period so the call report
+// carries the proof. Deliberately does NOT force `enabled` -- under CallKit
+// that is unvalidated and could break a call that is merely slow to activate.
+- (void)tvrn_watchForMissedActivationOnCall:(TVOCall *)call {
+    NSString *uuid = call.uuid.UUIDString;
+    TVRNRecordAudioEvent(@"connected", uuid);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(TVRNActivationGraceSeconds * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        TVOCall *live = self.callMap[uuid];
+        if (!live || live.state != TVOCallStateConnected) {
+            return;
+        }
+        NSNumber *preparedAt;
+        @synchronized (TVRNPrepareTimes()) {
+            preparedAt = TVRNPrepareTimes()[uuid];
+            [TVRNPrepareTimes() removeObjectForKey:uuid];
+        }
+        // No device reset recorded (call waiting leaves the device alone): nothing to judge.
+        if (!preparedAt || TVRNLastDidActivateMs >= preparedAt.doubleValue) {
+            TVRNRecordAudioEvent(@"connected+3s", uuid);
+            return;
+        }
+        RCTLogWarn(@"[TwilioVoiceReactNative] Call %@ Connected %.0fs ago, %.0fms after its audio device was reset, with no didActivateAudioSession -- expect dead air.",
+                   uuid, TVRNActivationGraceSeconds, TVRNNowMs() - preparedAt.doubleValue);
+        TVRNRecordAudioEvent(@"connected-without-didActivate", uuid);
+    });
 }
 
 - (void)call:(TVOCall *)call didDisconnectWithError:(NSError *)error {
