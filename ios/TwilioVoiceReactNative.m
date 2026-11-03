@@ -1072,6 +1072,25 @@ RCT_EXPORT_METHOD(util_generateId:(RCTPromiseResolveBlock)resolve
     resolve([NSUUID UUID].UUIDString);
 }
 
+// Audio-session timeline helpers live in TwilioVoiceReactNative+CallKit.m (PRO-12171).
+extern void TVRNRecordAudioEvent(NSString *event, NSString *callUuid);
+extern NSArray<NSDictionary *> *TVRNAudioTimelineSnapshot(void);
+
+RCT_EXPORT_METHOD(voice_recordAudioSessionSnapshot:(NSString *)label
+                  callUuid:(NSString *)callUuid
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+    TVRNRecordAudioEvent(label, callUuid.length > 0 ? callUuid : nil);
+    resolve(NULL);
+}
+
+RCT_EXPORT_METHOD(voice_getAudioSessionTimeline:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+    resolve(TVRNAudioTimelineSnapshot());
+}
+
 RCT_EXPORT_METHOD(voice_setIncomingCallContactHandleTemplate:(NSString *)template
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)

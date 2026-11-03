@@ -1,6 +1,7 @@
 import type { NativeModulesStatic } from 'react-native';
 import type { CallInvite } from '../CallInvite';
 import type { PreflightTest } from '../PreflightTest';
+import type { Voice } from '../Voice';
 import type { NativeAudioDevicesInfo } from './AudioDevice';
 import type {
   NativeCallInfo,
@@ -75,6 +76,11 @@ export interface TwilioVoiceReactNative extends NativeModulesStatic {
     configuration: Record<string, any>
   ): Promise<void>;
   voice_setIncomingCallContactHandleTemplate(template?: string): Promise<void>;
+  voice_recordAudioSessionSnapshot(
+    label: string,
+    callUuid: string
+  ): Promise<void>;
+  voice_getAudioSessionTimeline(): Promise<Voice.AudioSessionEvent[]>;
   voice_getAudioDevices(): Promise<NativeAudioDevicesInfo>;
   voice_getCalls(): Promise<NativeCallInfo[]>;
   voice_getCallInvites(): Promise<NativeCallInviteInfo[]>;
