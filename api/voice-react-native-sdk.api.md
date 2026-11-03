@@ -1218,8 +1218,8 @@ export class Voice extends EventEmitter {
 // @public
 export namespace Voice {
     export interface AudioSessionEvent {
-        category: string;
         callUuid?: string;
+        category: string;
         categoryOptions: number;
         enabled: boolean;
         event: string;

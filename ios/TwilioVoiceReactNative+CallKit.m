@@ -412,6 +412,13 @@ static NSMutableDictionary<NSString *, NSNumber *> *TVRNPrepareTimes(void) {
     return times;
 }
 static double TVRNLastDidActivateMs = 0;
+// didActivate is written on CallKit's queue and read on main; guard it.
+static NSObject *TVRNLastDidActivateLock(void) {
+    static NSObject *lock;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ lock = [NSObject new]; });
+    return lock;
+}
 static NSUInteger const TVRNAudioTimelineCap = 200;
 static NSTimeInterval const TVRNActivationGraceSeconds = 3.0;
 
@@ -519,7 +526,9 @@ NSArray<NSDictionary *> *TVRNAudioTimelineSnapshot(void) {
         return;
     }
     [TwilioVoiceReactNative twilioAudioDevice].enabled = YES;
-    TVRNLastDidActivateMs = TVRNNowMs();
+    @synchronized (TVRNLastDidActivateLock()) {
+        TVRNLastDidActivateMs = TVRNNowMs();
+    }
     TVRNRecordAudioEvent(@"didActivate", nil);
 }
 
@@ -743,7 +752,11 @@ NSArray<NSDictionary *> *TVRNAudioTimelineSnapshot(void) {
             [TVRNPrepareTimes() removeObjectForKey:uuid];
         }
         // No device reset recorded (call waiting leaves the device alone): nothing to judge.
-        if (!preparedAt || TVRNLastDidActivateMs >= preparedAt.doubleValue) {
+        double lastActivateMs;
+        @synchronized (TVRNLastDidActivateLock()) {
+            lastActivateMs = TVRNLastDidActivateMs;
+        }
+        if (!preparedAt || lastActivateMs >= preparedAt.doubleValue) {
             TVRNRecordAudioEvent(@"connected+3s", uuid);
             return;
         }
