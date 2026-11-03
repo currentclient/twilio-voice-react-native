@@ -28,6 +28,8 @@ NSString * const kTwilioVoicePushRegistryNotificationCancelledCallInviteError = 
 static CXProvider *sSharedCallKitProvider;
 static TVODefaultAudioDevice *sPushRegistryAudioDevice;
 static TVOCallInvite *sPendingCallInvite;
+// callSid -> CallKit UUID of every invite this registry reported (PRO-10252).
+static NSMutableDictionary<NSString *, NSUUID *> *sReportedInviteUuids;
 // Holds the PushKit completion block until reportNewIncomingCall is called.
 // PushKit checks its "was a call reported" flag synchronously, on return from
 // didReceiveIncomingPushWithPayload:forType:withCompletionHandler: — not on a
@@ -272,6 +274,15 @@ withCompletionHandler:(void (^)(void))completion {
     // Store the invite statically so the RN module can claim it even if it was not
     // yet registered as an NSNotificationCenter observer (cold-start race condition).
     sPendingCallInvite = callInvite;
+    if (!sReportedInviteUuids) {
+        sReportedInviteUuids = [NSMutableDictionary dictionary];
+    }
+    if (sReportedInviteUuids.count >= 32) {
+        [sReportedInviteUuids removeAllObjects]; // bound growth; entries only matter until the cancel push
+    }
+    if (callInvite.callSid.length > 0) {
+        sReportedInviteUuids[callInvite.callSid] = callInvite.uuid;
+    }
 
     // Build caller display name from the invite, applying the same custom
     // handle template the RN module would use (stored in NSUserDefaults).
@@ -347,21 +358,27 @@ withCompletionHandler:(void (^)(void))completion {
         TVPRSatisfyPendingPushWithPlaceholder(cancelledCallInvite.from, @"cancel push");
     }
 
-    // PRO-10252: end the CallKit call here too when this invite is still the
-    // one parked for the RN module. A VoIP push can wake a suspended or killed
-    // app before the RN module exists; the cancel then lands on a notification
-    // with no observer, nothing ends the call reported above, and the phone keeps
-    // ringing after another device answered. The module later claims that stale
-    // invite as if it were live. Ending an already-ended UUID is a no-op, so
-    // this is safe when the module also handles the cancel.
-    TVOCallInvite *parked = sPendingCallInvite;
-    if (parked && cancelledCallInvite.callSid.length > 0 &&
-        [parked.callSid isEqualToString:cancelledCallInvite.callSid]) {
-        NSLog(@"[TwilioVoicePushRegistry] Cancel for the parked invite (callSid: %@) -- ending its CallKit call", parked.callSid);
-        sPendingCallInvite = nil;
-        [sSharedCallKitProvider reportCallWithUUID:parked.uuid
+    // PRO-10252: end the CallKit call here for EVERY cancel whose invite this
+    // registry reported, whether or not the RN module has since claimed it.
+    // Real-device runs showed a cold-launched app (killed) whose module claims
+    // the invite ~60 ms after the push; the cancel then went only through the
+    // module's CXEndCallAction transaction and the phone kept ringing to the 60s
+    // timeout. reportCallWithUUID:endedAtDate: on the provider that reported the
+    // call needs no call controller or module state, and ending an already-ended
+    // UUID is a no-op, so it is safe alongside the module's own handling.
+    NSString *cancelSid = cancelledCallInvite.callSid;
+    NSUUID *reportedUuid = cancelSid.length > 0 ? sReportedInviteUuids[cancelSid] : nil;
+    if (reportedUuid) {
+        NSLog(@"[TwilioVoicePushRegistry] Cancel for reported invite (callSid: %@) -- ending its CallKit call", cancelSid);
+        [sReportedInviteUuids removeObjectForKey:cancelSid];
+        if (sPendingCallInvite && [sPendingCallInvite.callSid isEqualToString:cancelSid]) {
+            sPendingCallInvite = nil;
+        }
+        [sSharedCallKitProvider reportCallWithUUID:reportedUuid
                                        endedAtDate:[NSDate date]
                                             reason:CXCallEndedReasonRemoteEnded];
+    } else {
+        NSLog(@"[TwilioVoicePushRegistry] Cancel for callSid %@ matches no reported invite", cancelSid);
     }
 
     // Notify the RN module so it can match the cancelled invite, clean up, and
