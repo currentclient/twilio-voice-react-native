@@ -1199,12 +1199,14 @@ export class Voice extends EventEmitter {
         audioDevices: AudioDevice[];
         selectedDevice?: AudioDevice;
     }>;
+    getAudioSessionTimeline(): Promise<Voice.AudioSessionEvent[]>;
     getCallInvites(): Promise<ReadonlyMap<Uuid, CallInvite>>;
     getCalls(): Promise<ReadonlyMap<Uuid, Call>>;
     getDeviceToken(): Promise<string>;
     getVersion(): Promise<string>;
     handleFirebaseMessage(remoteMessage: Record<string, string>): Promise<boolean>;
     initializePushRegistry(): Promise<void>;
+    recordAudioSessionSnapshot(label: string, callUuid?: string): Promise<void>;
     register(token: string): Promise<void>;
     runPreflight(accessToken: string, options?: PreflightTest.Options): Promise<PreflightTest>;
     setCallKitConfiguration(configuration: CallKit.ConfigurationOptions): Promise<void>;
@@ -1215,6 +1217,16 @@ export class Voice extends EventEmitter {
 
 // @public
 export namespace Voice {
+    export interface AudioSessionEvent {
+        callUuid?: string;
+        category: string;
+        categoryOptions: number;
+        enabled: boolean;
+        event: string;
+        mode: string;
+        otherAudioPlaying: boolean;
+        timestamp: number;
+    }
     export type ConnectOptions = {
         params?: Record<string, string>;
         contactHandle?: string;

@@ -807,6 +807,48 @@ describe('Voice class', () => {
       });
     });
 
+    describe('audio session timeline (PRO-12171)', () => {
+      it('is a no-op returning [] on android', async () => {
+        jest.spyOn(Platform, 'OS', 'get').mockReturnValue('android');
+        jest.mocked(MockNativeModule.voice_getAudioSessionTimeline).mockClear();
+        await expect(new Voice().getAudioSessionTimeline()).resolves.toEqual(
+          []
+        );
+        expect(
+          MockNativeModule.voice_getAudioSessionTimeline
+        ).not.toHaveBeenCalled();
+      });
+
+      it('reads the native timeline on ios', async () => {
+        jest.spyOn(Platform, 'OS', 'get').mockReturnValue('ios');
+        const entry = {
+          event: 'didActivate',
+          timestamp: 1,
+          enabled: true,
+          category: 'AVAudioSessionCategoryPlayAndRecord',
+          mode: 'AVAudioSessionModeVoiceChat',
+          categoryOptions: 0,
+          otherAudioPlaying: false,
+        };
+        jest
+          .mocked(MockNativeModule.voice_getAudioSessionTimeline)
+          .mockResolvedValueOnce([entry]);
+        await expect(new Voice().getAudioSessionTimeline()).resolves.toEqual([
+          entry,
+        ]);
+      });
+
+      it('records a labelled snapshot on ios', async () => {
+        jest.spyOn(Platform, 'OS', 'get').mockReturnValue('ios');
+        jest.mocked(MockNativeModule.voice_recordAudioSessionSnapshot).mockClear();
+        await new Voice().recordAudioSessionSnapshot('answer', 'uuid-1');
+        expect(
+          jest.mocked(MockNativeModule.voice_recordAudioSessionSnapshot).mock
+            .calls
+        ).toEqual([['answer', 'uuid-1']]);
+      });
+    });
+
     describe('.setIncomingCallContactHandleTemplate', () => {
       it('invokes the native module with a string', async () => {
         const template = 'Foo ${DisplayName}';

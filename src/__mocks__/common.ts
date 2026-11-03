@@ -60,6 +60,8 @@ export const NativeModule = {
   voice_setIncomingCallContactHandleTemplate: jest
     .fn()
     .mockResolvedValue(undefined),
+  voice_recordAudioSessionSnapshot: jest.fn().mockResolvedValue(undefined),
+  voice_getAudioSessionTimeline: jest.fn().mockResolvedValue([]),
   voice_unregister: jest.fn().mockResolvedValue(undefined),
   voice_runPreflight: jest.fn().mockResolvedValue(undefined),
 
