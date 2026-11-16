@@ -58,7 +58,7 @@
   },
   "devDependencies": {
     "@babel/core": "7.29.13",
-    "@babel/preset-env": "7.29.7",
+    "@babel/preset-env": "7.29.14",
     "@commitlint/config-conventional": "^11.0.0",
     "@microsoft/api-extractor": "7.58.13",
     "@ngrok/ngrok": "^1.7.0",
