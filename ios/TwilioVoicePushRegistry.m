@@ -45,10 +45,28 @@ static dispatch_block_t sPendingVoIPCompletion;
 // See TwilioVoiceForeignCallDelegate in the header.
 static id<TwilioVoiceForeignCallDelegate> sForeignCallDelegate;
 
+// PRO-12789: wraps a PushKit completion so it runs at most once, whichever
+// path (foreign delegate, Twilio invite, placeholder) gets to it.
+static dispatch_block_t TVPROnce(dispatch_block_t block) {
+    __block dispatch_block_t pending = [block copy];
+    NSObject *lock = [NSObject new];
+    return [^{
+        dispatch_block_t run;
+        @synchronized (lock) {
+            run = pending;
+            pending = nil;
+        }
+        if (run) run();
+    } copy];
+}
+
 // Satisfies a pending PushKit completion by reporting a placeholder incoming call to CallKit
 // (required by iOS 13+ — every VoIP push must produce reportNewIncomingCall before completion()).
 // The placeholder is immediately ended so it never appears as an active call.
 // Safe to call on the main queue only (PKPushRegistry uses main queue).
+// PRO-12789: the PushKit completion runs from the report's completion block,
+// once CallKit has the call, as in Apple's PushKit sample. Calling it right
+// after the request raced PushKit's check and got the app killed.
 static void TVPRSatisfyPendingPushWithPlaceholder(NSString *handleValue, NSString *reasonLog) {
     dispatch_block_t pendingCompletion = sPendingVoIPCompletion;
     sPendingVoIPCompletion = nil;
@@ -75,8 +93,8 @@ static void TVPRSatisfyPendingPushWithPlaceholder(NSString *handleValue, NSStrin
                                                 reason:CXCallEndedReasonRemoteEnded];
         }
         // A failed report (DND/blocklist) still satisfies PushKit.
+        pendingCompletion();
     }];
-    pendingCompletion();
 }
 
 @interface TwilioVoicePushRegistry () <PKPushRegistryDelegate, TVONotificationDelegate>
@@ -173,7 +191,25 @@ withCompletionHandler:(void (^)(void))completion {
         // unchanged Twilio path below, whose placeholder fallback still
         // guarantees a report.
         id<TwilioVoiceForeignCallDelegate> foreign = sForeignCallDelegate;
-        if (foreign && [foreign respondsToSelector:@selector(twilioVoiceHandleForeignVoIPPush:provider:)]) {
+        // PRO-12789: every path below calls this at most once, and only from
+        // a reportNewIncomingCall completion block (see TVPROnce).
+        completion = TVPROnce(completion);
+        if (foreign && [foreign respondsToSelector:@selector(twilioVoiceHandleForeignVoIPPush:provider:completion:)]) {
+            BOOL claimed = NO;
+            @try {
+                claimed = [foreign twilioVoiceHandleForeignVoIPPush:payload.dictionaryPayload
+                                                          provider:sSharedCallKitProvider
+                                                        completion:completion];
+            } @catch (NSException *exception) {
+                NSLog(@"[TwilioVoicePushRegistry] Foreign delegate raised %@ (%@) on a VoIP push -- handing it to Twilio", exception.name, exception.reason);
+                claimed = NO;
+            }
+            if (claimed) {
+                // The delegate calls `completion` once CallKit has its report.
+                NSLog(@"[TwilioVoicePushRegistry] VoIP push claimed by the foreign call delegate");
+                return;
+            }
+        } else if (foreign && [foreign respondsToSelector:@selector(twilioVoiceHandleForeignVoIPPush:provider:)]) {
             BOOL claimed = NO;
             @try {
                 claimed = [foreign twilioVoiceHandleForeignVoIPPush:payload.dictionaryPayload
@@ -202,6 +238,11 @@ withCompletionHandler:(void (^)(void))completion {
         // isn't on a delay — so any push not resolved synchronously by
         // handleNotification: below is satisfied with a placeholder immediately
         // after, before we return.
+        //
+        // PRO-12789: the report is requested before return; the COMPLETION
+        // waits for CallKit's answer to it. Calling it straight after the
+        // request is what PRO-6691 and PRO-12789 crashed on (SIGABRT, frames
+        // all PushKit/libdispatch/objc, on Twilio invites and SIP wakes alike).
 
         // Overwrite protection: if a previous push completion was never satisfied,
         // satisfy it now before storing the new one (PRO-4264).
@@ -302,6 +343,11 @@ withCompletionHandler:(void (^)(void))completion {
     callUpdate.supportsUngrouping = NO;
     callUpdate.hasVideo = NO;
 
+    // Taken now so the push handler's fallback sees it satisfied; called from
+    // the report's completion block, once CallKit has the call (PRO-12789).
+    dispatch_block_t pendingCompletion = sPendingVoIPCompletion;
+    sPendingVoIPCompletion = nil;
+
     [sSharedCallKitProvider reportNewIncomingCallWithUUID:callInvite.uuid
                                                   update:callUpdate
                                               completion:^(NSError *error) {
@@ -310,15 +356,10 @@ withCompletionHandler:(void (^)(void))completion {
         } else {
             NSLog(@"[TwilioVoicePushRegistry] Failed to report incoming call to CallKit: %@.", error);
         }
+        if (pendingCompletion) {
+            pendingCompletion();
+        }
     }];
-
-    // reportNewIncomingCall has been called — now safe to call the deferred
-    // PushKit completion block (PRO-4038).
-    dispatch_block_t pendingCompletion = sPendingVoIPCompletion;
-    sPendingVoIPCompletion = nil;
-    if (pendingCompletion) {
-        pendingCompletion();
-    }
 
     // Notify the RN module so it can store the invite and emit a JS event
     // when it is ready.  We pass the TVOCallInvite object directly so the

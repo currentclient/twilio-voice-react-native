@@ -39,7 +39,18 @@ FOUNDATION_EXPORT NSString * const kTwilioVoicePushRegistryNotificationCancelled
 /// Offered on the PushKit queue (main) before Twilio parses the payload.
 /// Return YES ONLY after reporting an incoming call on `provider`
 /// synchronously, inside this call: the PushKit completion runs right after.
+/// Superseded by the `completion:` variant below, which is preferred when the
+/// delegate implements both.
 - (BOOL)twilioVoiceHandleForeignVoIPPush:(NSDictionary *)payload provider:(CXProvider *)provider;
+/// PRO-12789: as above, but on YES the delegate owns the PushKit completion
+/// and calls it from its reportNewIncomingCall completion block, once CallKit
+/// has the call (Apple's PushKit sample does exactly this). Calling it right
+/// after requesting the report raced PushKit's "was a call reported" check
+/// and got the app killed (SIGABRT in PushKit). On NO the delegate must not
+/// call it; the block is safe to call more than once regardless.
+- (BOOL)twilioVoiceHandleForeignVoIPPush:(NSDictionary *)payload
+                                provider:(CXProvider *)provider
+                              completion:(dispatch_block_t)completion;
 /// Is `uuid` one of the foreign stack's CallKit calls? Every CXProvider
 /// action for such a call is routed to the methods below instead of Twilio.
 - (BOOL)twilioVoiceOwnsCallWithUUID:(NSUUID *)uuid;
